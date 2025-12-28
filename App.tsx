@@ -229,7 +229,7 @@ const App: React.FC = () => {
             <i className="fa-solid fa-microphone-lines text-white text-2xl"></i>
           </div>
           <div>
-            <h1 className="text-2xl font-black text-white tracking-tight italic uppercase">Lingua<span className="text-indigo-500">Bridge</span></h1>
+            <h1 className="text-2xl font-black text-white tracking-tight italic uppercase">Tra<span className="text-indigo-500">voices</span></h1>
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
                <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-green-500 animate-pulse' : 'bg-slate-700'}`}></span>
                {isActive ? 'Middleman Online' : 'Agent Ready'}
@@ -452,7 +452,7 @@ const App: React.FC = () => {
       </main>
 
       <footer className="py-8 text-center text-slate-700 text-[9px] font-black uppercase tracking-[0.3em] relative z-10">
-         LinguaBridge Infrastructure &copy; 2024 &bull; Global Real-Time Translation Bridge
+         Travoices &copy; 2024 &bull; Real-Time Voice Translation
       </footer>
 
       <style>{`
