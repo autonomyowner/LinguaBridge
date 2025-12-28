@@ -1,20 +1,30 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# TRAVoices
 
-# Run and deploy your AI Studio app
+Real-time AI Voice Translation powered by Gemini AI and LiveKit.
 
-This contains everything you need to run your app locally.
+## Features
 
-View your app in AI Studio: https://ai.studio/apps/drive/19Jb0ELeadw5nkghfWuINEiD1TvlIwLyT
+- Real-time voice translation across 12+ languages
+- Multi-participant rooms for group conversations
+- Live transcription display
+- Low-latency audio streaming via WebRTC
 
 ## Run Locally
 
-**Prerequisites:**  Node.js
-
+**Prerequisites:** Node.js
 
 1. Install dependencies:
-   `npm install`
+   ```
+   npm install
+   ```
+
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+
 3. Run the app:
-   `npm run dev`
+   ```
+   npm run dev
+   ```
+
+## Deployment
+
+This app is configured for deployment on Render as a static site. See `render.yaml` for configuration.
