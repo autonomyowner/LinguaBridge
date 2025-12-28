@@ -62,25 +62,25 @@ const App: React.FC = () => {
   const stopAll = useCallback(() => {
     setIsActive(false);
     setIsConnecting(false);
-    
+
     if (lkRoomRef.current) {
       lkRoomRef.current.disconnect();
       lkRoomRef.current = null;
     }
-    
+
     if (sessionRef.current) {
       sessionRef.current.close();
       sessionRef.current = null;
     }
-    
+
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(t => t.stop());
       localStreamRef.current = null;
     }
-    
+
     if (audioContextInRef.current) audioContextInRef.current.close().catch(() => {});
     if (audioContextOutRef.current) audioContextOutRef.current.close().catch(() => {});
-    
+
     sourcesRef.current.forEach(s => { try { s.stop(); } catch(e) {} });
     sourcesRef.current.clear();
     setParticipants([]);
@@ -95,16 +95,16 @@ const App: React.FC = () => {
     try {
       const token = await generateToken();
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-      
+
       // Initialize Audio Contexts
       audioContextInRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: INPUT_SAMPLE_RATE });
       audioContextOutRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: OUTPUT_SAMPLE_RATE });
-      
+
       // Create a destination node to capture the translated output
       destNodeRef.current = audioContextOutRef.current.createMediaStreamDestination();
 
       const systemInstruction = `
-        You are a high-fidelity real-time translator. 
+        You are a high-fidelity real-time translator.
         Your user speaks ${myLang.name}. You must translate their speech into ${theirLang.name}.
         The translated audio will be broadcast to a global room.
         Translate precisely and maintain the original tone.
@@ -119,7 +119,7 @@ const App: React.FC = () => {
             localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
             const source = audioContextInRef.current!.createMediaStreamSource(localStreamRef.current);
             const processor = audioContextInRef.current!.createScriptProcessor(4096, 1, 1);
-            
+
             processor.onaudioprocess = (e) => {
               const inputData = e.inputBuffer.getChannelData(0);
               sessionPromise.then(session => session.sendRealtimeInput({ media: createBlob(inputData) }));
@@ -130,7 +130,7 @@ const App: React.FC = () => {
             // Setup LiveKit Room
             const room = new Room();
             lkRoomRef.current = room;
-            
+
             room.on(RoomEvent.ParticipantConnected, () => setParticipants(Array.from(room.remoteParticipants.values())));
             room.on(RoomEvent.ParticipantDisconnected, () => setParticipants(Array.from(room.remoteParticipants.values())));
             room.on(RoomEvent.TrackSubscribed, (track) => {
@@ -139,7 +139,7 @@ const App: React.FC = () => {
             });
 
             await room.connect(LIVEKIT_URL, token);
-            
+
             // Create a LocalAudioTrack from the Gemini translation destination
             const translatedTrack = new LocalAudioTrack(destNodeRef.current!.stream.getAudioTracks()[0]);
             await room.localParticipant.publishTrack(translatedTrack);
@@ -153,18 +153,18 @@ const App: React.FC = () => {
             if (base64Audio && audioContextOutRef.current && destNodeRef.current) {
               const ctx = audioContextOutRef.current;
               const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, OUTPUT_SAMPLE_RATE, 1);
-              
+
               const sourceNode = ctx.createBufferSource();
               sourceNode.buffer = audioBuffer;
-              
+
               // Multi-cast: hear it locally AND send to LiveKit destination
               sourceNode.connect(ctx.destination);
               sourceNode.connect(destNodeRef.current);
-              
+
               nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
               sourceNode.start(nextStartTimeRef.current);
               nextStartTimeRef.current += audioBuffer.duration;
-              
+
               sourcesRef.current.add(sourceNode);
               sourceNode.onended = () => sourcesRef.current.delete(sourceNode);
             }
@@ -172,7 +172,7 @@ const App: React.FC = () => {
             // Handle Transcripts
             if (message.serverContent?.inputTranscription) transcriptBufferRef.current.input += message.serverContent.inputTranscription.text;
             if (message.serverContent?.outputTranscription) transcriptBufferRef.current.output += message.serverContent.outputTranscription.text;
-            
+
             if (message.serverContent?.turnComplete) {
               const { input, output } = transcriptBufferRef.current;
               if (input.trim()) setTranscript(prev => [{ id: Date.now().toString(), sender: 'user', text: input, timestamp: new Date(), language: myLang.code }, ...prev]);
@@ -227,12 +227,12 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        <button 
+        <button
           onClick={isActive ? stopAll : connectBridge}
           disabled={isConnecting}
           className={`px-8 py-3 rounded-2xl font-black uppercase tracking-widest text-xs flex items-center gap-3 transition-all ${
-            isActive 
-              ? 'bg-rose-500 text-white hover:bg-rose-600 shadow-xl shadow-rose-500/20' 
+            isActive
+              ? 'bg-rose-500 text-white hover:bg-rose-600 shadow-xl shadow-rose-500/20'
               : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-xl shadow-indigo-500/20'
           }`}
         >
@@ -291,7 +291,69 @@ const App: React.FC = () => {
               </div>
             </div>
           </section>
-          
+
+          {/* Participants Bar */}
+          {isActive && (
+            <section className="glass rounded-[2rem] p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                  <i className="fa-solid fa-users text-indigo-500"></i> Room Participants
+                </h3>
+                <span className="text-[10px] font-black text-indigo-400 bg-indigo-500/10 px-2 py-1 rounded-full">
+                  {participants.length + 1} in room
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                {/* Current User (You) */}
+                <div className="flex items-center gap-3 p-3 bg-indigo-600/20 border border-indigo-500/30 rounded-xl">
+                  <div className="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center">
+                    <span className="text-xs font-black text-white">{userName.charAt(0).toUpperCase()}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-white truncate">{userName}</p>
+                    <p className="text-[10px] text-indigo-300 font-medium">{myLang.flag} {myLang.name} → {theirLang.flag} {theirLang.name}</p>
+                  </div>
+                  <span className="text-[9px] font-black text-indigo-400 bg-indigo-500/20 px-2 py-1 rounded-full">YOU</span>
+                </div>
+
+                {/* Remote Participants */}
+                {participants.length === 0 ? (
+                  <div className="flex items-center justify-center py-6 text-slate-600">
+                    <div className="text-center">
+                      <i className="fa-solid fa-user-clock text-2xl mb-2 opacity-30"></i>
+                      <p className="text-[10px] font-bold uppercase tracking-wider">Waiting for others to join...</p>
+                      <p className="text-[9px] text-slate-700 mt-1">Share room name: <span className="text-indigo-400">{roomName}</span></p>
+                    </div>
+                  </div>
+                ) : (
+                  participants.map((participant) => {
+                    const metadata = participant.metadata ? JSON.parse(participant.metadata) : {};
+                    const langCode = metadata.lang || 'unknown';
+                    const participantLang = SUPPORTED_LANGUAGES.find(l => l.code === langCode);
+                    return (
+                      <div key={participant.identity} className="flex items-center gap-3 p-3 bg-slate-900/50 border border-slate-800 rounded-xl hover:border-slate-700 transition-colors">
+                        <div className="w-8 h-8 bg-emerald-600 rounded-full flex items-center justify-center">
+                          <span className="text-xs font-black text-white">{participant.name?.charAt(0).toUpperCase() || '?'}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-slate-200 truncate">{participant.name || participant.identity}</p>
+                          <p className="text-[10px] text-slate-500 font-medium">
+                            {participantLang ? `${participantLang.flag} ${participantLang.name}` : 'Language not set'}
+                          </p>
+                        </div>
+                        <span className="flex items-center gap-1">
+                          <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                          <span className="text-[9px] font-bold text-emerald-400">LIVE</span>
+                        </span>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </section>
+          )}
+
           {error && (
             <div className="bg-rose-500/10 border border-rose-500/20 rounded-2xl p-5 text-rose-500 text-xs font-bold flex gap-3 animate-shake">
               <i className="fa-solid fa-circle-exclamation mt-0.5"></i>
@@ -329,8 +391,8 @@ const App: React.FC = () => {
                 transcript.map((msg) => (
                   <div key={msg.id} className={`flex flex-col ${msg.sender === 'user' ? 'items-start' : 'items-end'}`}>
                     <div className={`max-w-[85%] group relative transition-all duration-300 hover:scale-[1.01] ${
-                      msg.sender === 'user' 
-                        ? 'bg-slate-900 border border-slate-800 rounded-3xl rounded-tl-none' 
+                      msg.sender === 'user'
+                        ? 'bg-slate-900 border border-slate-800 rounded-3xl rounded-tl-none'
                         : 'bg-indigo-600 text-white rounded-3xl rounded-tr-none shadow-lg shadow-indigo-500/20'
                     } p-6`}>
                       <div className={`flex items-center gap-3 mb-3 ${msg.sender === 'user' ? 'text-slate-500' : 'text-indigo-200'} font-black text-[9px] uppercase tracking-[0.15em]`}>
@@ -351,8 +413,8 @@ const App: React.FC = () => {
              <div className="flex items-center gap-6">
                 <div className="flex items-center gap-1.5 h-6">
                   {[...Array(8)].map((_, i) => (
-                    <div key={i} className={`w-1 bg-indigo-500 rounded-full transition-all duration-150 ${isActive ? 'animate-bounce' : 'opacity-10'}`} 
-                      style={{ 
+                    <div key={i} className={`w-1 bg-indigo-500 rounded-full transition-all duration-150 ${isActive ? 'animate-bounce' : 'opacity-10'}`}
+                      style={{
                         height: isActive ? `${30 + Math.random() * 70}%` : '20%',
                         animationDelay: `${i * 0.1}s`,
                         animationDuration: '0.8s'
@@ -368,11 +430,11 @@ const App: React.FC = () => {
                   </span>
                 </div>
              </div>
-             
+
              {isActive && (
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20">
                    <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse"></span>
-                   <span className="text-[9px] font-black text-indigo-300 uppercase tracking-tighter">Live Session ID: {lkRoomRef.current?.sid.slice(-6)}</span>
+                   <span className="text-[9px] font-black text-indigo-300 uppercase tracking-tighter">Live Session ID: {lkRoomRef.current?.sid?.slice(-6) || '------'}</span>
                 </div>
              )}
           </div>
