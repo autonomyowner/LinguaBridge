@@ -45,22 +45,23 @@ const App: React.FC = () => {
    */
   const generateToken = async () => {
     const secret = new TextEncoder().encode(LIVEKIT_API_SECRET);
+    const identity = userName || `User_${Date.now()}`;
     const payload = {
+      sub: identity,
+      iss: LIVEKIT_API_KEY,
       video: {
         room: roomName,
         roomJoin: true,
         canPublish: true,
         canSubscribe: true
       },
-      name: userName,
+      name: identity,
       metadata: JSON.stringify({ lang: myLang.code }),
     };
     return await new jose.SignJWT(payload)
-      .setProtectedHeader({ alg: 'HS256', kid: LIVEKIT_API_KEY })
-      .setSubject(userName)
+      .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
       .setExpirationTime('2h')
-      .setIssuer(LIVEKIT_API_KEY)
       .sign(secret);
   };
 
@@ -162,8 +163,7 @@ const App: React.FC = () => {
               const sourceNode = ctx.createBufferSource();
               sourceNode.buffer = audioBuffer;
 
-              // Multi-cast: hear it locally AND send to LiveKit destination
-              sourceNode.connect(ctx.destination);
+              // Only send to LiveKit - don't play locally (you don't hear your own translation)
               sourceNode.connect(destNodeRef.current);
 
               nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
