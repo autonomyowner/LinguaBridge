@@ -46,13 +46,18 @@ const App: React.FC = () => {
   const generateToken = async () => {
     const secret = new TextEncoder().encode(LIVEKIT_API_SECRET);
     const payload = {
-      video: { room: roomName, roomJoin: true, canPublish: true, canSubscribe: true },
+      video: {
+        room: roomName,
+        roomJoin: true,
+        canPublish: true,
+        canSubscribe: true
+      },
       name: userName,
-      identity: userName,
       metadata: JSON.stringify({ lang: myLang.code }),
     };
     return await new jose.SignJWT(payload)
       .setProtectedHeader({ alg: 'HS256', kid: LIVEKIT_API_KEY })
+      .setSubject(userName)
       .setIssuedAt()
       .setExpirationTime('2h')
       .setIssuer(LIVEKIT_API_KEY)
