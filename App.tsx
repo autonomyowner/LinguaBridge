@@ -139,9 +139,14 @@ const App: React.FC = () => {
 
             room.on(RoomEvent.ParticipantConnected, () => setParticipants(Array.from(room.remoteParticipants.values())));
             room.on(RoomEvent.ParticipantDisconnected, () => setParticipants(Array.from(room.remoteParticipants.values())));
-            room.on(RoomEvent.TrackSubscribed, (track) => {
+            room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+              // Only play audio from OTHER participants, never your own
+              if (participant.identity === room.localParticipant.identity) {
+                return; // Skip our own tracks
+              }
               const el = track.attach();
-              document.body.appendChild(el); // Attach audio elements to DOM to ensure playback
+              el.id = `audio-${participant.identity}`;
+              document.body.appendChild(el);
             });
 
             await room.connect(LIVEKIT_URL, token);
