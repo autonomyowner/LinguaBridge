@@ -1,0 +1,7 @@
+{
+  "name": "LinguaBridge AI",
+  "description": "A high-performance real-time translation agent powered by Gemini Live API, enabling seamless voice-to-voice communication across language barriers.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
