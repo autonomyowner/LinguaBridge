@@ -1,18 +1,19 @@
 import { query } from "../_generated/server";
 import { v } from "convex/values";
-import { getCurrentUser } from "../lib/utils";
+import { getCurrentUserOrNull } from "../lib/utils";
 import { TIER_LIMITS } from "../schema";
 
 /**
  * Get current user's subscription
+ * Returns default free tier if not authenticated
  */
 export const getCurrent = query({
   args: {},
   handler: async (ctx) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUserOrNull(ctx);
 
-    const userTier = user.subscriptionTier ?? "free";
-    const minutesUsed = user.minutesUsedThisMonth ?? 0;
+    const userTier = user?.subscriptionTier ?? "free";
+    const minutesUsed = user?.minutesUsedThisMonth ?? 0;
     const limits = TIER_LIMITS[userTier];
 
     return {
@@ -91,8 +92,8 @@ export const canUpgrade = query({
     targetTier: v.union(v.literal("pro"), v.literal("enterprise")),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
-    const userTier = user.subscriptionTier ?? "free";
+    const user = await getCurrentUserOrNull(ctx);
+    const userTier = user?.subscriptionTier ?? "free";
 
     if (userTier === "enterprise") {
       return { canUpgrade: false, reason: "Already on highest tier" };

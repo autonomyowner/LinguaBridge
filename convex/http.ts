@@ -1,14 +1,7 @@
 import { httpRouter } from "convex/server";
-import { auth } from "./auth";
 import { httpAction } from "./_generated/server";
 
 const http = httpRouter();
-
-// ============================================
-// AUTH ROUTES
-// Handled by Convex Auth
-// ============================================
-auth.addHttpRoutes(http);
 
 // ============================================
 // HEALTH CHECK

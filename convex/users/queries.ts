@@ -83,11 +83,21 @@ export const getSettings = query({
 
 /**
  * Get user's usage analytics for the current month
+ * Returns default stats if not authenticated
  */
 export const getUsageStats = query({
   args: {},
   handler: async (ctx) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUserOrNull(ctx);
+    if (!user) {
+      return {
+        minutesUsed: 0,
+        sessionsCount: 0,
+        messagesTranslated: 0,
+        roomsCreated: 0,
+        languagesUsed: [],
+      };
+    }
 
     // Get this month's date range
     const now = new Date();

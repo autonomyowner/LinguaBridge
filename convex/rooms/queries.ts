@@ -147,11 +147,15 @@ export const getByLivekitRoom = query({
 
 /**
  * Get rooms for authenticated user
+ * Returns empty if not authenticated
  */
 export const getMy = query({
   args: {},
   handler: async (ctx) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUserOrNull(ctx);
+    if (!user) {
+      return { owned: [], joined: [] };
+    }
 
     // Get rooms created by user
     const createdRooms = await ctx.db
