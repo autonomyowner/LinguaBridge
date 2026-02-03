@@ -146,6 +146,42 @@ export const getByLivekitRoom = query({
 });
 
 /**
+ * Find an active public room by name
+ * Used for "join existing or create new" flow
+ */
+export const findByName = query({
+  args: { name: v.string() },
+  handler: async (ctx, args) => {
+    const room = await ctx.db
+      .query("rooms")
+      .withIndex("by_name", (q) => q.eq("name", args.name))
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("isActive"), true),
+          q.eq(q.field("isPublic"), true)
+        )
+      )
+      .first();
+
+    if (!room) {
+      return null;
+    }
+
+    // Get participant count
+    const participants = await ctx.db
+      .query("participants")
+      .withIndex("by_room", (q) => q.eq("roomId", room._id))
+      .collect();
+
+    return {
+      ...room,
+      participantCount: participants.length,
+      onlineCount: participants.filter((p) => p.isOnline).length,
+    };
+  },
+});
+
+/**
  * Get rooms for authenticated user
  * Returns empty if not authenticated
  */

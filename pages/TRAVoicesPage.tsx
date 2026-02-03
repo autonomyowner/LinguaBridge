@@ -34,7 +34,7 @@ const TRAVoicesPage: React.FC = () => {
 
   // --- Convex Hooks ---
   const generateLiveKitToken = useAction(api.rooms.actions.generateLiveKitToken);
-  const createRoom = useMutation(api.rooms.mutations.create);
+  const findOrCreateRoom = useMutation(api.rooms.mutations.findOrCreate);
   const startSession = useMutation(api.sessions.mutations.start);
   const endSession = useMutation(api.sessions.mutations.end);
   const addMessage = useMutation(api.transcripts.mutations.addMessage);
@@ -119,19 +119,23 @@ const TRAVoicesPage: React.FC = () => {
     setError(null);
 
     try {
-      // Create or get room
-      let roomId = currentRoomId;
-      if (!roomId) {
-        const result = await createRoom({
-          name: roomName,
-          description: `Translation room: ${myLang.name} to ${theirLang.name}`,
-          isPublic: true,
-          defaultSourceLanguage: myLang.code,
-          defaultTargetLanguage: theirLang.code,
-        });
-        roomId = result.roomId;
-        setCurrentRoomId(roomId);
+      // Validate Gemini API key
+      const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      if (!geminiApiKey) {
+        throw new Error('Gemini API key not configured');
       }
+
+      // Find existing room or create new one
+      // This ensures users joining "GlobalLobby" all end up in the same room
+      const result = await findOrCreateRoom({
+        name: roomName,
+        description: `Translation room: ${myLang.name} to ${theirLang.name}`,
+        isPublic: true,
+        defaultSourceLanguage: myLang.code,
+        defaultTargetLanguage: theirLang.code,
+      });
+      const roomId = result.roomId;
+      setCurrentRoomId(roomId);
 
       // Generate LiveKit token from backend (SECURE - no credentials exposed)
       const { token, url } = await generateLiveKitToken({ roomId });
@@ -140,12 +144,33 @@ const TRAVoicesPage: React.FC = () => {
       const { sessionId } = await startSession({ roomId });
       setCurrentSessionId(sessionId);
 
-      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || '' });
-
+      // Setup audio contexts FIRST
       audioContextInRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: INPUT_SAMPLE_RATE });
       audioContextOutRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: OUTPUT_SAMPLE_RATE });
-
       destNodeRef.current = audioContextOutRef.current.createMediaStreamDestination();
+
+      // Get microphone access FIRST
+      localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // Connect to LiveKit FIRST (before Gemini, to avoid race condition)
+      const room = new Room();
+      lkRoomRef.current = room;
+
+      room.on(RoomEvent.ParticipantConnected, () => setParticipants(Array.from(room.remoteParticipants.values())));
+      room.on(RoomEvent.ParticipantDisconnected, () => setParticipants(Array.from(room.remoteParticipants.values())));
+      room.on(RoomEvent.TrackSubscribed, (track) => {
+        const el = track.attach();
+        document.body.appendChild(el);
+      });
+
+      await room.connect(url, token);
+
+      // Publish translated audio track
+      const translatedTrack = new LocalAudioTrack(destNodeRef.current.stream.getAudioTracks()[0]);
+      await room.localParticipant.publishTrack(translatedTrack);
+
+      // NOW connect to Gemini AI (LiveKit is already stable)
+      const ai = new GoogleGenAI({ apiKey: geminiApiKey });
 
       const systemInstruction = `
         You are a high-fidelity real-time translator.
@@ -158,9 +183,9 @@ const TRAVoicesPage: React.FC = () => {
       const sessionPromise = ai.live.connect({
         model: MODEL_NAME,
         callbacks: {
-          onopen: async () => {
-            localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
-            const source = audioContextInRef.current!.createMediaStreamSource(localStreamRef.current);
+          onopen: () => {
+            // Setup audio input pipeline after Gemini is ready
+            const source = audioContextInRef.current!.createMediaStreamSource(localStreamRef.current!);
             const processor = audioContextInRef.current!.createScriptProcessor(4096, 1, 1);
 
             processor.onaudioprocess = (e) => {
@@ -169,21 +194,6 @@ const TRAVoicesPage: React.FC = () => {
             };
             source.connect(processor);
             processor.connect(audioContextInRef.current!.destination);
-
-            const room = new Room();
-            lkRoomRef.current = room;
-
-            room.on(RoomEvent.ParticipantConnected, () => setParticipants(Array.from(room.remoteParticipants.values())));
-            room.on(RoomEvent.ParticipantDisconnected, () => setParticipants(Array.from(room.remoteParticipants.values())));
-            room.on(RoomEvent.TrackSubscribed, (track) => {
-              const el = track.attach();
-              document.body.appendChild(el);
-            });
-
-            await room.connect(url, token);
-
-            const translatedTrack = new LocalAudioTrack(destNodeRef.current!.stream.getAudioTracks()[0]);
-            await room.localParticipant.publishTrack(translatedTrack);
 
             setIsActive(true);
             setIsConnecting(false);

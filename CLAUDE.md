@@ -10,6 +10,8 @@ TRAVoices is a real-time AI voice translation SaaS. Users can join translation r
 
 **Subscription Tiers:** Free (60 min/month), Pro ($19/mo, 600 min), Enterprise ($99/mo, unlimited)
 
+**Current Mode:** Authentication is disabled - all pages work without login (guest mode). Convex queries/mutations use `getCurrentUserOrNull()` and return defaults for unauthenticated users.
+
 ## Commands
 
 ```bash
@@ -18,7 +20,10 @@ npm run build        # Production build
 npx convex dev       # Start Convex dev server (watches for changes)
 npx convex deploy    # Deploy Convex functions to production
 npx vercel --prod    # Deploy frontend to Vercel
+npx convex codegen   # Regenerate Convex TypeScript types
 ```
+
+Note: No lint or test commands are configured.
 
 ## Architecture
 
@@ -27,23 +32,28 @@ npx vercel --prod    # Deploy frontend to Vercel
 ConvexClientProvider → AuthProvider → LanguageProvider → App
 ```
 
-- **ConvexClientProvider**: Wraps app with `ConvexAuthProvider` for real-time database and auth
-- **AuthProvider**: Exposes `useAuth()` hook with `user`, `isAuthenticated`, `isLoading`, `signOut`
+- **ConvexClientProvider**: Wraps app with Convex for real-time database
+- **AuthProvider**: Currently returns `isAuthenticated: true` always (auth disabled)
 - **LanguageProvider**: i18n support with `useLanguage()` hook returning `t()`, `language`, `isRTL`
 
 ### Routing (App.tsx)
-- **Public routes:** `/`, `/pricing`
-- **Auth routes (PublicOnlyRoute):** `/signin`, `/signup`, `/forgot-password` - redirect to dashboard if authenticated
-- **Protected routes (ProtectedRoute):** `/dashboard`, `/translate`, `/settings`, `/history` - require authentication
+All routes are public (no auth required):
+- `/` - Home page
+- `/pricing` - Pricing page
+- `/translate` - Translation room (main feature)
+- `/dashboard` - User dashboard
+- `/settings` - User settings
+- `/history` - Session history
+- `/admin/map` - Launch roadmap (Arabic)
+- `/signin`, `/signup`, `/forgot-password` - Auth pages (non-functional)
 
 ### Convex Backend Structure
 ```
 convex/
 ├── schema.ts          # Database tables: users, rooms, participants, sessions, transcripts, apiKeys, analytics, userSettings
-├── auth.ts            # Convex Auth with Password provider (email/password only)
-├── http.ts            # HTTP endpoints for webhooks
+├── http.ts            # HTTP endpoints (health check)
 ├── lib/
-│   ├── utils.ts       # getCurrentUser(), getCurrentUserOrNull(), tier limits, helpers
+│   ├── utils.ts       # getCurrentUserOrNull(), tier limits, helpers
 │   └── permissions.ts # RBAC helpers
 ├── users/             # queries.ts, mutations.ts
 ├── rooms/             # queries.ts, mutations.ts, actions.ts (LiveKit token generation)
@@ -55,9 +65,27 @@ convex/
 
 ### Key Convex Patterns
 
-**User lookup** (convex/lib/utils.ts): Convex Auth stores user ID in `identity.subject` as `users|<id>`. The `getCurrentUser()` function extracts this ID directly, then falls back to `tokenIdentifier` and `email` indexes.
+**Guest Mode**: All queries/mutations use `getCurrentUserOrNull()` and handle null users gracefully:
+- Room creation works without auth (creatorId is optional)
+- Sessions work without auth (hostUserId is optional)
+- Queries return default values (free tier limits, empty arrays)
 
-**Schema fields**: Most user fields are optional to allow Convex Auth's profile function to create users with minimal data.
+**Schema optionals**: `creatorId` in rooms and `hostUserId` in sessions are optional to support guest-created content.
+
+**Room Joining**: Use `findOrCreate` mutation (not `create`) for public rooms. This ensures users joining the same room name (e.g., "GlobalLobby") connect to the same LiveKit room instead of creating duplicates.
+
+### Translation Flow (pages/TRAVoicesPage.tsx)
+
+The main `/translate` page orchestrates:
+1. **Room Setup**: `findOrCreate` mutation finds existing room by name or creates new one
+2. **LiveKit Token**: `generateLiveKitToken` action creates JWT for WebRTC connection
+3. **Gemini AI Session**: Google Gemini Live API for real-time speech-to-speech translation
+4. **Audio Pipeline**:
+   - User mic → ScriptProcessor (16kHz) → Gemini AI
+   - Gemini output (24kHz) → AudioBufferSource → MediaStreamDestination → LiveKit publish
+5. **Transcript Storage**: Messages saved to Convex `transcripts` table
+
+Supported languages defined in `types.ts` (`SUPPORTED_LANGUAGES` array).
 
 ### i18n (providers/LanguageContext.tsx)
 - Languages: English (`en`), Arabic (`ar`)
@@ -78,13 +106,16 @@ CSS variables defined in `index.html`:
 - `VITE_CONVEX_URL` - Convex deployment URL
 
 **Convex Dashboard (Settings > Environment Variables):**
-- `JWT_PRIVATE_KEY` - RSA private key for auth tokens
-- `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`
+- `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` - Required for voice rooms
 - `GEMINI_API_KEY` - Google Gemini API key for AI translation
 - `SITE_URL` - Production URL (https://travoices.xyz)
 
 ## Deployment
 
-- **Frontend:** Vercel (travoices.xyz)
+- **Frontend:** Vercel (travoices.xyz / www.travoices.xyz)
 - **Backend:** Convex Cloud (rosy-bullfrog-314.convex.cloud)
 - **SPA routing:** `vercel.json` rewrites all paths to `/index.html`
+
+Deploy workflow:
+1. `npx convex deploy` - Deploy Convex functions first
+2. `npx vercel --prod` - Deploy frontend to Vercel

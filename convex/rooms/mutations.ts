@@ -102,6 +102,156 @@ export const create = mutation({
 });
 
 /**
+ * Find an existing public room by name or create a new one
+ * This ensures users joining "GlobalLobby" all end up in the same room
+ */
+export const findOrCreate = mutation({
+  args: {
+    name: v.string(),
+    description: v.optional(v.string()),
+    isPublic: v.boolean(),
+    defaultSourceLanguage: v.string(),
+    defaultTargetLanguage: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUserOrNull(ctx);
+    const now = Date.now();
+
+    // For public rooms, check if one with this name already exists
+    if (args.isPublic) {
+      const existingRoom = await ctx.db
+        .query("rooms")
+        .withIndex("by_name", (q) => q.eq("name", args.name))
+        .filter((q) =>
+          q.and(
+            q.eq(q.field("isActive"), true),
+            q.eq(q.field("isPublic"), true)
+          )
+        )
+        .first();
+
+      if (existingRoom) {
+        // Join existing room instead of creating new one
+        if (user) {
+          // Check if user is already a participant
+          const existingParticipant = await ctx.db
+            .query("participants")
+            .withIndex("by_room_user", (q) =>
+              q.eq("roomId", existingRoom._id).eq("userId", user._id)
+            )
+            .unique();
+
+          if (!existingParticipant) {
+            // Check participant limit
+            const participants = await ctx.db
+              .query("participants")
+              .withIndex("by_room", (q) => q.eq("roomId", existingRoom._id))
+              .collect();
+
+            if (participants.length < existingRoom.maxParticipants) {
+              // Add user as participant
+              await ctx.db.insert("participants", {
+                roomId: existingRoom._id,
+                userId: user._id,
+                role: "member",
+                preferredLanguage: args.defaultTargetLanguage,
+                isMuted: false,
+                isOnline: true,
+                joinedAt: now,
+                lastSeenAt: now,
+              });
+            }
+          } else {
+            // Update existing participant to online
+            await ctx.db.patch(existingParticipant._id, {
+              isOnline: true,
+              lastSeenAt: now,
+            });
+          }
+        }
+
+        return {
+          roomId: existingRoom._id,
+          accessCode: existingRoom.accessCode,
+          livekitRoomName: existingRoom.livekitRoomName,
+          isExisting: true,
+        };
+      }
+    }
+
+    // No existing room found, create a new one
+    const livekitRoomName = generateLivekitRoomName(args.name);
+    const accessCode = args.isPublic ? undefined : generateRoomCode();
+
+    const userTier = user?.subscriptionTier ?? "free";
+    const limits = getTierLimits(userTier);
+
+    if (user) {
+      const canCreate = await canCreateRoom(ctx, user);
+      if (!canCreate) {
+        throw new Error(
+          `You've reached the maximum of ${limits.maxRooms} rooms for your plan. Upgrade to create more.`
+        );
+      }
+    }
+
+    const roomId = await ctx.db.insert("rooms", {
+      name: args.name,
+      description: args.description,
+      creatorId: user?._id,
+      isPublic: args.isPublic,
+      maxParticipants: limits.maxParticipants,
+      defaultSourceLanguage: args.defaultSourceLanguage,
+      defaultTargetLanguage: args.defaultTargetLanguage,
+      accessCode,
+      livekitRoomName,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    if (user) {
+      await ctx.db.insert("participants", {
+        roomId,
+        userId: user._id,
+        role: "owner",
+        preferredLanguage: args.defaultTargetLanguage,
+        isMuted: false,
+        isOnline: true,
+        joinedAt: now,
+        lastSeenAt: now,
+      });
+
+      const todayDate = new Date().toISOString().split("T")[0];
+      const existingAnalytics = await ctx.db
+        .query("analytics")
+        .withIndex("by_user_date", (q) => q.eq("userId", user._id).eq("date", todayDate))
+        .unique();
+
+      if (existingAnalytics) {
+        await ctx.db.patch(existingAnalytics._id, {
+          roomsCreated: existingAnalytics.roomsCreated + 1,
+          updatedAt: now,
+        });
+      } else {
+        await ctx.db.insert("analytics", {
+          userId: user._id,
+          date: todayDate,
+          minutesUsed: 0,
+          sessionsStarted: 0,
+          messagesTranslated: 0,
+          roomsCreated: 1,
+          languagesUsed: [],
+          updatedAt: now,
+        });
+      }
+    }
+
+    return { roomId, accessCode, livekitRoomName, isExisting: false };
+  },
+});
+
+/**
  * Update room settings
  */
 export const update = mutation({
@@ -423,5 +573,49 @@ export const regenerateAccessCode = mutation({
     });
 
     return { accessCode };
+  },
+});
+
+/**
+ * Clean up duplicate rooms with the same name
+ * Keeps the oldest room and soft-deletes the rest
+ */
+export const cleanupDuplicateRooms = mutation({
+  args: { roomName: v.string() },
+  handler: async (ctx, args) => {
+    // Get all active public rooms with this name, ordered by creation time
+    const rooms = await ctx.db
+      .query("rooms")
+      .withIndex("by_name", (q) => q.eq("name", args.roomName))
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("isActive"), true),
+          q.eq(q.field("isPublic"), true)
+        )
+      )
+      .collect();
+
+    if (rooms.length <= 1) {
+      return { deleted: 0, kept: rooms[0]?._id };
+    }
+
+    // Sort by creation time (oldest first)
+    rooms.sort((a, b) => a.createdAt - b.createdAt);
+
+    // Keep the oldest, delete the rest
+    const [keepRoom, ...duplicates] = rooms;
+
+    for (const room of duplicates) {
+      await ctx.db.patch(room._id, {
+        isActive: false,
+        updatedAt: Date.now(),
+      });
+    }
+
+    return {
+      deleted: duplicates.length,
+      kept: keepRoom._id,
+      keptLivekitRoom: keepRoom.livekitRoomName,
+    };
   },
 });
