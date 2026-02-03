@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Header from '../components/Header';
+import { useLanguage } from '../providers/LanguageContext';
 
 const HomePage: React.FC = () => {
   const [mounted, setMounted] = useState(false);
+  const { t, isRTL } = useLanguage();
 
   useEffect(() => {
     setMounted(true);
@@ -55,7 +57,7 @@ const HomePage: React.FC = () => {
                 border: '1px solid var(--matcha-200)',
               }}
             >
-              Real-time AI Voice Translation
+              {t("hero.badge")}
             </span>
           </div>
 
@@ -65,15 +67,15 @@ const HomePage: React.FC = () => {
               mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
             }`}
             style={{
-              fontFamily: '"DM Serif Display", Georgia, serif',
+              fontFamily: isRTL ? '"Cairo", system-ui, sans-serif' : '"DM Serif Display", Georgia, serif',
               fontSize: 'clamp(2.5rem, 6vw, 4.5rem)',
               lineHeight: 1.1,
               color: 'var(--text-primary)',
             }}
           >
-            Break Language Barriers
+            {t("hero.title1")}
             <br />
-            <span className="text-gradient">Speak Freely</span>
+            <span className="text-gradient">{t("hero.title2")}</span>
           </h1>
 
           {/* Subheadline */}
@@ -83,8 +85,7 @@ const HomePage: React.FC = () => {
             }`}
             style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}
           >
-            Experience seamless real-time voice translation powered by AI.
-            Connect with anyone, anywhere, in any language.
+            {t("hero.subtitle")}
           </p>
 
           {/* CTA Buttons */}
@@ -97,13 +98,13 @@ const HomePage: React.FC = () => {
               to="/translate"
               className="matcha-btn matcha-btn-primary text-base px-8 py-4"
             >
-              Start Translating
+              {t("hero.cta.start")}
             </Link>
             <a
               href="#how-it-works"
               className="matcha-btn matcha-btn-secondary text-base px-8 py-4"
             >
-              See How It Works
+              {t("hero.cta.howItWorks")}
             </a>
           </div>
 
@@ -230,7 +231,7 @@ const HomePage: React.FC = () => {
                           style={{ background: '#10b981', boxShadow: '0 0 12px #10b981' }}
                         />
                         <span className="text-xs md:text-sm font-medium text-white/90">
-                          Live Translation
+                          {t("hero.liveTranslation")}
                         </span>
                       </div>
                       <div className="flex items-center justify-center gap-3">
@@ -240,10 +241,10 @@ const HomePage: React.FC = () => {
                       </div>
                       <div className="flex flex-wrap gap-2 justify-center text-[10px] md:text-xs">
                         <span className="px-2 py-0.5 rounded" style={{ background: 'rgba(104, 166, 125, 0.2)', color: 'var(--matcha-300)', border: '1px solid rgba(104, 166, 125, 0.3)' }}>
-                          12+ Languages
+                          {t("hero.languages")}
                         </span>
                         <span className="px-2 py-0.5 rounded" style={{ background: 'rgba(224, 123, 76, 0.2)', color: 'var(--terra-300)', border: '1px solid rgba(224, 123, 76, 0.3)' }}>
-                          Real-time
+                          {t("hero.realtime")}
                         </span>
                       </div>
                     </div>
@@ -306,16 +307,16 @@ const HomePage: React.FC = () => {
 
               {/* Floating badges */}
               <div
-                className="hidden md:block absolute top-6 left-6 px-3 py-1.5 rounded-lg backdrop-blur-sm float-badge"
+                className={`hidden md:block absolute top-6 ${isRTL ? 'right-6' : 'left-6'} px-3 py-1.5 rounded-lg backdrop-blur-sm float-badge`}
                 style={{ background: 'rgba(104, 166, 125, 0.1)', border: '1px solid rgba(104, 166, 125, 0.2)' }}
               >
-                <span className="text-xs font-medium" style={{ color: 'var(--matcha-300)' }}>20+ Languages</span>
+                <span className="text-xs font-medium" style={{ color: 'var(--matcha-300)' }}>{t("hero.badge20")}</span>
               </div>
               <div
-                className="hidden md:block absolute top-6 right-6 px-3 py-1.5 rounded-lg backdrop-blur-sm float-badge"
+                className={`hidden md:block absolute top-6 ${isRTL ? 'left-6' : 'right-6'} px-3 py-1.5 rounded-lg backdrop-blur-sm float-badge`}
                 style={{ background: 'rgba(198, 123, 94, 0.1)', border: '1px solid rgba(198, 123, 94, 0.2)', animationDelay: '0.5s' }}
               >
-                <span className="text-xs font-medium" style={{ color: 'var(--terra-300)' }}>Zero Latency</span>
+                <span className="text-xs font-medium" style={{ color: 'var(--terra-300)' }}>{t("hero.zeroLatency")}</span>
               </div>
             </div>
           </div>
@@ -328,24 +329,24 @@ const HomePage: React.FC = () => {
           <div className="text-center mb-16">
             <h2
               className="text-3xl md:text-4xl mb-4"
-              style={{ fontFamily: '"DM Serif Display", Georgia, serif', color: 'var(--text-primary)' }}
+              style={{ fontFamily: isRTL ? '"Cairo", system-ui, sans-serif' : '"DM Serif Display", Georgia, serif', color: 'var(--text-primary)' }}
             >
-              How It Works
+              {t("howItWorks.title")}
             </h2>
             <p className="max-w-xl mx-auto" style={{ color: 'var(--text-secondary)' }}>
-              Start translating in seconds with our simple three-step process
+              {t("howItWorks.subtitle")}
             </p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-8">
             {[
-              { step: '01', title: 'Join a Room', description: 'Create or join a translation room. Share the room name with anyone you want to communicate with.' },
-              { step: '02', title: 'Select Languages', description: 'Choose your native language and the language you want to translate to. We support 12+ languages.' },
-              { step: '03', title: 'Start Speaking', description: 'Press start and speak naturally. Your voice is translated in real-time and broadcast to the room.' },
+              { step: '01', title: t("howItWorks.step1.title"), description: t("howItWorks.step1.desc") },
+              { step: '02', title: t("howItWorks.step2.title"), description: t("howItWorks.step2.desc") },
+              { step: '03', title: t("howItWorks.step3.title"), description: t("howItWorks.step3.desc") },
             ].map((item, i) => (
               <div key={i} className="matcha-card p-8 relative overflow-hidden group">
                 <span
-                  className="absolute -top-4 -right-4 text-8xl font-bold opacity-5 group-hover:opacity-10 transition-opacity"
+                  className={`absolute -top-4 ${isRTL ? '-left-4' : '-right-4'} text-8xl font-bold opacity-5 group-hover:opacity-10 transition-opacity`}
                   style={{ fontFamily: '"DM Serif Display", Georgia, serif', color: 'var(--matcha-600)' }}
                 >
                   {item.step}
@@ -360,7 +361,7 @@ const HomePage: React.FC = () => {
                 </div>
                 <h3
                   className="text-xl mb-3"
-                  style={{ fontFamily: '"DM Serif Display", Georgia, serif', color: 'var(--text-primary)' }}
+                  style={{ fontFamily: isRTL ? '"Cairo", system-ui, sans-serif' : '"DM Serif Display", Georgia, serif', color: 'var(--text-primary)' }}
                 >
                   {item.title}
                 </h3>
@@ -379,28 +380,28 @@ const HomePage: React.FC = () => {
           <div className="text-center mb-16">
             <h2
               className="text-3xl md:text-4xl mb-4"
-              style={{ fontFamily: '"DM Serif Display", Georgia, serif', color: 'var(--text-primary)' }}
+              style={{ fontFamily: isRTL ? '"Cairo", system-ui, sans-serif' : '"DM Serif Display", Georgia, serif', color: 'var(--text-primary)' }}
             >
-              Why Choose TRAVoices
+              {t("features.title")}
             </h2>
             <p className="max-w-xl mx-auto" style={{ color: 'var(--text-secondary)' }}>
-              Advanced features for seamless communication across languages
+              {t("features.subtitle")}
             </p>
           </div>
 
           <div className="grid md:grid-cols-2 gap-8">
             {[
-              { title: 'Real-time Translation', description: 'Powered by advanced AI, your speech is translated instantly with minimal latency.', color: 'var(--matcha-500)' },
-              { title: 'Multi-participant Rooms', description: 'Connect multiple people in a single room for group conversations across languages.', color: 'var(--terra-400)' },
-              { title: '12+ Languages', description: 'Support for major world languages including English, Spanish, French, German, Chinese, and more.', color: 'var(--matcha-600)' },
-              { title: 'Live Transcription', description: 'See what you say and the translations in real-time with our live transcription feature.', color: 'var(--terra-500)' },
+              { title: t("features.realtime.title"), description: t("features.realtime.desc"), color: 'var(--matcha-500)' },
+              { title: t("features.multiRoom.title"), description: t("features.multiRoom.desc"), color: 'var(--terra-400)' },
+              { title: t("features.languages.title"), description: t("features.languages.desc"), color: 'var(--matcha-600)' },
+              { title: t("features.transcription.title"), description: t("features.transcription.desc"), color: 'var(--terra-500)' },
             ].map((feature, i) => (
-              <div key={i} className="flex gap-6 p-6 rounded-2xl transition-all duration-300 hover:bg-white/50">
+              <div key={i} className={`flex gap-6 p-6 rounded-2xl transition-all duration-300 hover:bg-white/50 ${isRTL ? 'flex-row-reverse text-right' : ''}`}>
                 <div className="w-1 rounded-full flex-shrink-0" style={{ background: feature.color }} />
                 <div>
                   <h3
                     className="text-xl mb-2"
-                    style={{ fontFamily: '"DM Serif Display", Georgia, serif', color: 'var(--text-primary)' }}
+                    style={{ fontFamily: isRTL ? '"Cairo", system-ui, sans-serif' : '"DM Serif Display", Georgia, serif', color: 'var(--text-primary)' }}
                   >
                     {feature.title}
                   </h3>
@@ -422,7 +423,7 @@ const HomePage: React.FC = () => {
             style={{ background: 'linear-gradient(135deg, var(--matcha-500) 0%, var(--matcha-700) 100%)' }}
           >
             <div
-              className="absolute top-0 right-0 w-64 h-64 opacity-10"
+              className={`absolute top-0 ${isRTL ? 'left-0' : 'right-0'} w-64 h-64 opacity-10`}
               style={{
                 background: 'radial-gradient(circle, white 0%, transparent 70%)',
                 borderRadius: '50%',
@@ -430,7 +431,7 @@ const HomePage: React.FC = () => {
               }}
             />
             <div
-              className="absolute bottom-0 left-0 w-48 h-48 opacity-10"
+              className={`absolute bottom-0 ${isRTL ? 'right-0' : 'left-0'} w-48 h-48 opacity-10`}
               style={{
                 background: 'radial-gradient(circle, white 0%, transparent 70%)',
                 borderRadius: '50%',
@@ -440,19 +441,19 @@ const HomePage: React.FC = () => {
 
             <h2
               className="text-3xl md:text-4xl mb-4 relative z-10"
-              style={{ fontFamily: '"DM Serif Display", Georgia, serif', color: 'white' }}
+              style={{ fontFamily: isRTL ? '"Cairo", system-ui, sans-serif' : '"DM Serif Display", Georgia, serif', color: 'white' }}
             >
-              Ready to Break Language Barriers?
+              {t("cta.title")}
             </h2>
             <p className="mb-8 max-w-xl mx-auto relative z-10" style={{ color: 'rgba(255, 255, 255, 0.9)' }}>
-              Join thousands of users who are already communicating seamlessly across languages.
+              {t("cta.subtitle")}
             </p>
             <Link
               to="/translate"
               className="inline-flex items-center justify-center px-8 py-4 text-base font-medium rounded-xl transition-all relative z-10"
               style={{ background: 'white', color: 'var(--matcha-700)', boxShadow: '0 4px 14px rgba(0, 0, 0, 0.15)' }}
             >
-              Start Translating Now
+              {t("cta.button")}
             </Link>
           </div>
         </div>
@@ -464,39 +465,39 @@ const HomePage: React.FC = () => {
         style={{ background: 'var(--cream-50)', borderColor: 'var(--border-soft)' }}
       >
         <div className="max-w-5xl mx-auto">
-          <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-            <div>
+          <div className={`flex flex-col md:flex-row justify-between items-center gap-6 ${isRTL ? 'md:flex-row-reverse' : ''}`}>
+            <div className={isRTL ? 'text-right' : ''}>
               <p
                 className="text-xl font-semibold mb-1"
-                style={{ fontFamily: '"DM Serif Display", Georgia, serif', color: 'var(--matcha-600)' }}
+                style={{ fontFamily: isRTL ? '"Cairo", system-ui, sans-serif' : '"DM Serif Display", Georgia, serif', color: 'var(--matcha-600)' }}
               >
                 TRAVoices
               </p>
               <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                Real-time AI Voice Translation
+                {t("footer.tagline")}
               </p>
             </div>
-            <div className="flex gap-8">
+            <div className={`flex gap-8 ${isRTL ? 'flex-row-reverse' : ''}`}>
               <Link
                 to="/"
                 className="text-sm hover:opacity-70 transition-opacity"
                 style={{ color: 'var(--text-secondary)' }}
               >
-                Home
+                {t("nav.home")}
               </Link>
               <Link
                 to="/translate"
                 className="text-sm hover:opacity-70 transition-opacity"
                 style={{ color: 'var(--text-secondary)' }}
               >
-                Translate
+                {t("nav.translate")}
               </Link>
               <a
                 href="#how-it-works"
                 className="text-sm hover:opacity-70 transition-opacity"
                 style={{ color: 'var(--text-secondary)' }}
               >
-                How It Works
+                {t("howItWorks.title")}
               </a>
             </div>
           </div>
@@ -505,7 +506,7 @@ const HomePage: React.FC = () => {
             className="mt-8 pt-8 border-t text-center text-sm"
             style={{ borderColor: 'var(--border-soft)', color: 'var(--text-muted)' }}
           >
-            © 2024 TRAVoices. All rights reserved.
+            {t("footer.copyright")}
           </div>
         </div>
       </footer>

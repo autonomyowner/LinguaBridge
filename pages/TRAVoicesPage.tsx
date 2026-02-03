@@ -1,15 +1,13 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai';
 import { Room, RoomEvent, RemoteParticipant, LocalAudioTrack } from 'livekit-client';
-import * as jose from 'jose';
+import { useAction, useMutation, useQuery } from 'convex/react';
+import { api } from '../convex/_generated/api';
 import { SUPPORTED_LANGUAGES, TranslationMessage, Language } from '../types';
 import { decode, decodeAudioData, createBlob } from '../audioUtils';
 import Header from '../components/Header';
-
-// LiveKit Credentials (provided by user)
-const LIVEKIT_URL = 'wss://linguabridge-8fllsg2x.livekit.cloud';
-const LIVEKIT_API_KEY = 'APIGBybjgG6368N';
-const LIVEKIT_API_SECRET = 'ZL2VsewXQfWb7TZVZOQPM3UnlVvKZTAT21b6oTef4LiD';
+import { useAuth } from '../providers/AuthContext';
+import { Id } from '../convex/_generated/dataModel';
 
 // Gemini Model Config
 const MODEL_NAME = 'gemini-2.5-flash-native-audio-preview-09-2025';
@@ -17,16 +15,47 @@ const INPUT_SAMPLE_RATE = 16000;
 const OUTPUT_SAMPLE_RATE = 24000;
 
 const TRAVoicesPage: React.FC = () => {
+  const { user, isAuthenticated } = useAuth();
+
   // --- UI State ---
   const [isConnecting, setIsConnecting] = useState(false);
   const [isActive, setIsActive] = useState(false);
   const [roomName, setRoomName] = useState('GlobalLobby');
-  const [userName, setUserName] = useState(`User_${Math.floor(Math.random() * 1000)}`);
+  const [userName, setUserName] = useState('');
   const [myLang, setMyLang] = useState<Language>(SUPPORTED_LANGUAGES[0]); // English
   const [theirLang, setTheirLang] = useState<Language>(SUPPORTED_LANGUAGES[1]); // Spanish
   const [transcript, setTranscript] = useState<TranslationMessage[]>([]);
   const [participants, setParticipants] = useState<RemoteParticipant[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [currentRoomId, setCurrentRoomId] = useState<Id<"rooms"> | null>(null);
+  const [currentSessionId, setCurrentSessionId] = useState<Id<"sessions"> | null>(null);
+
+  // --- Convex Hooks ---
+  const generateLiveKitToken = useAction(api.rooms.actions.generateLiveKitToken);
+  const createRoom = useMutation(api.rooms.mutations.create);
+  const startSession = useMutation(api.sessions.mutations.start);
+  const endSession = useMutation(api.sessions.mutations.end);
+  const addMessage = useMutation(api.transcripts.mutations.addMessage);
+  const userSettings = useQuery(api.users.queries.getSettings);
+
+  // Set default name from user
+  React.useEffect(() => {
+    if (user?.name) {
+      setUserName(user.name);
+    } else if (user?.email) {
+      setUserName(user.email.split('@')[0]);
+    }
+  }, [user]);
+
+  // Set default languages from settings
+  React.useEffect(() => {
+    if (userSettings) {
+      const sourceLang = SUPPORTED_LANGUAGES.find(l => l.code === userSettings.preferredSourceLanguage);
+      const targetLang = SUPPORTED_LANGUAGES.find(l => l.code === userSettings.preferredTargetLanguage);
+      if (sourceLang) setMyLang(sourceLang);
+      if (targetLang) setTheirLang(targetLang);
+    }
+  }, [userSettings]);
 
   // --- Core References ---
   const lkRoomRef = useRef<Room | null>(null);
@@ -39,31 +68,19 @@ const TRAVoicesPage: React.FC = () => {
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const transcriptBufferRef = useRef({ input: '', output: '' });
 
-  const generateToken = async () => {
-    const secret = new TextEncoder().encode(LIVEKIT_API_SECRET);
-    const identity = userName || `User_${Date.now()}`;
-    const payload = {
-      sub: identity,
-      iss: LIVEKIT_API_KEY,
-      video: {
-        room: roomName,
-        roomJoin: true,
-        canPublish: true,
-        canSubscribe: true
-      },
-      name: identity,
-      metadata: JSON.stringify({ lang: myLang.code }),
-    };
-    return await new jose.SignJWT(payload)
-      .setProtectedHeader({ alg: 'HS256' })
-      .setIssuedAt()
-      .setExpirationTime('2h')
-      .sign(secret);
-  };
-
-  const stopAll = useCallback(() => {
+  const stopAll = useCallback(async () => {
     setIsActive(false);
     setIsConnecting(false);
+
+    // End session in database
+    if (currentSessionId) {
+      try {
+        await endSession({ sessionId: currentSessionId });
+      } catch (e) {
+        console.error('Failed to end session:', e);
+      }
+      setCurrentSessionId(null);
+    }
 
     if (lkRoomRef.current) {
       lkRoomRef.current.disconnect();
@@ -87,16 +104,41 @@ const TRAVoicesPage: React.FC = () => {
     sourcesRef.current.clear();
     setParticipants([]);
     nextStartTimeRef.current = 0;
-  }, []);
+  }, [currentSessionId, endSession]);
 
   const connectBridge = async () => {
+    if (!isAuthenticated) {
+      setError('Please sign in to start a translation session');
+      return;
+    }
+
     if (isActive || isConnecting) return;
     setIsConnecting(true);
     setError(null);
 
     try {
-      const token = await generateToken();
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      // Create or get room
+      let roomId = currentRoomId;
+      if (!roomId) {
+        const result = await createRoom({
+          name: roomName,
+          description: `Translation room: ${myLang.name} to ${theirLang.name}`,
+          isPublic: true,
+          defaultSourceLanguage: myLang.code,
+          defaultTargetLanguage: theirLang.code,
+        });
+        roomId = result.roomId;
+        setCurrentRoomId(roomId);
+      }
+
+      // Generate LiveKit token from backend (SECURE - no credentials exposed)
+      const { token, url } = await generateLiveKitToken({ roomId });
+
+      // Start session
+      const { sessionId } = await startSession({ roomId });
+      setCurrentSessionId(sessionId);
+
+      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || '' });
 
       audioContextInRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: INPUT_SAMPLE_RATE });
       audioContextOutRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: OUTPUT_SAMPLE_RATE });
@@ -136,7 +178,7 @@ const TRAVoicesPage: React.FC = () => {
               document.body.appendChild(el);
             });
 
-            await room.connect(LIVEKIT_URL, token);
+            await room.connect(url, token);
 
             const translatedTrack = new LocalAudioTrack(destNodeRef.current!.stream.getAudioTracks()[0]);
             await room.localParticipant.publishTrack(translatedTrack);
@@ -167,8 +209,42 @@ const TRAVoicesPage: React.FC = () => {
 
             if (message.serverContent?.turnComplete) {
               const { input, output } = transcriptBufferRef.current;
-              if (input.trim()) setTranscript(prev => [{ id: Date.now().toString(), sender: 'user', text: input, timestamp: new Date(), language: myLang.code }, ...prev]);
-              if (output.trim()) setTranscript(prev => [{ id: Date.now().toString() + 'a', sender: 'agent', text: output, timestamp: new Date(), language: theirLang.code }, ...prev]);
+              if (input.trim()) {
+                const inputMsg: TranslationMessage = { id: Date.now().toString(), sender: 'user', text: input, timestamp: new Date(), language: myLang.code };
+                setTranscript(prev => [inputMsg, ...prev]);
+
+                // Save to database
+                if (currentSessionId) {
+                  try {
+                    await addMessage({
+                      sessionId: currentSessionId,
+                      originalText: input,
+                      sourceLanguage: myLang.code,
+                      messageType: 'speech',
+                    });
+                  } catch (e) {
+                    console.error('Failed to save transcript:', e);
+                  }
+                }
+              }
+              if (output.trim()) {
+                const outputMsg: TranslationMessage = { id: Date.now().toString() + 'a', sender: 'agent', text: output, timestamp: new Date(), language: theirLang.code };
+                setTranscript(prev => [outputMsg, ...prev]);
+
+                // Save translation to database
+                if (currentSessionId) {
+                  try {
+                    await addMessage({
+                      sessionId: currentSessionId,
+                      originalText: output,
+                      sourceLanguage: theirLang.code,
+                      messageType: 'translation',
+                    });
+                  } catch (e) {
+                    console.error('Failed to save translation:', e);
+                  }
+                }
+              }
               transcriptBufferRef.current = { input: '', output: '' };
             }
 
@@ -199,6 +275,55 @@ const TRAVoicesPage: React.FC = () => {
       stopAll();
     }
   };
+
+  // Show sign-in prompt if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen" style={{ background: 'var(--bg-page)' }}>
+        <Header />
+        <main className="relative z-10 px-6 pb-12 pt-8">
+          <div className="max-w-md mx-auto">
+            <div className="matcha-card p-8 text-center">
+              <div
+                className="w-20 h-20 rounded-full mx-auto mb-6 flex items-center justify-center"
+                style={{ background: 'var(--matcha-100)' }}
+              >
+                <svg
+                  className="w-10 h-10"
+                  style={{ color: 'var(--matcha-600)' }}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                  />
+                </svg>
+              </div>
+              <h2 className="text-2xl font-serif mb-2" style={{ color: 'var(--text-primary)' }}>
+                Sign in Required
+              </h2>
+              <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
+                Please sign in to access the translation room
+              </p>
+              <a href="/signin" className="matcha-btn matcha-btn-primary py-3 px-8 inline-block">
+                Sign In
+              </a>
+              <p className="mt-4 text-sm" style={{ color: 'var(--text-muted)' }}>
+                Don't have an account?{' '}
+                <a href="/signup" className="font-semibold" style={{ color: 'var(--matcha-600)' }}>
+                  Sign up free
+                </a>
+              </p>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg-page)' }}>

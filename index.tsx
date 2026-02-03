@@ -1,9 +1,11 @@
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
+import { ConvexClientProvider } from "./providers/ConvexClientProvider";
+import { AuthProvider } from "./providers/AuthContext";
+import { LanguageProvider } from "./providers/LanguageContext";
 
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import App from './App';
-
-const rootElement = document.getElementById('root');
+const rootElement = document.getElementById("root");
 if (!rootElement) {
   throw new Error("Could not find root element to mount to");
 }
@@ -11,6 +13,12 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <App />
+    <ConvexClientProvider>
+      <AuthProvider>
+        <LanguageProvider>
+          <App />
+        </LanguageProvider>
+      </AuthProvider>
+    </ConvexClientProvider>
   </React.StrictMode>
 );

@@ -1,11 +1,20 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { UserMenu } from './UserMenu';
+import { useAuth } from '../providers/AuthContext';
+import { useLanguage } from '../providers/LanguageContext';
 
 const Header: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
+  const { isAuthenticated, isLoading } = useAuth();
+  const { language, setLanguage, t, isRTL } = useLanguage();
 
   const isActive = (path: string) => location.pathname === path;
+
+  const toggleLanguage = () => {
+    setLanguage(language === "en" ? "ar" : "en");
+  };
 
   return (
     <header
@@ -18,16 +27,23 @@ const Header: React.FC = () => {
       <div className="max-w-6xl mx-auto px-6 py-4">
         <div className="flex items-center justify-between">
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-3">
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center"
-              style={{
-                background: 'linear-gradient(135deg, var(--matcha-500), var(--matcha-600))',
-                boxShadow: 'var(--shadow-md)',
-              }}
-            >
-              <span className="text-lg font-bold" style={{ color: 'var(--text-inverse)' }}>T</span>
-            </div>
+          <Link to="/" className="flex items-center gap-2">
+            {/* Voice wave logo */}
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect width="32" height="32" rx="8" fill="url(#logoGradient)"/>
+              <g transform="translate(6, 8)">
+                <rect x="0" y="6" width="3" height="4" rx="1.5" fill="white" opacity="0.9"/>
+                <rect x="5" y="3" width="3" height="10" rx="1.5" fill="white"/>
+                <rect x="10" y="0" width="3" height="16" rx="1.5" fill="white"/>
+                <rect x="15" y="3" width="3" height="10" rx="1.5" fill="white"/>
+              </g>
+              <defs>
+                <linearGradient id="logoGradient" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#68a67d"/>
+                  <stop offset="1" stopColor="#5a9470"/>
+                </linearGradient>
+              </defs>
+            </svg>
             <span
               className="text-xl font-semibold font-serif"
               style={{ color: 'var(--matcha-600)' }}
@@ -45,8 +61,19 @@ const Header: React.FC = () => {
                 color: isActive('/') ? 'var(--matcha-600)' : 'var(--text-secondary)',
               }}
             >
-              Home
+              {t("nav.home")}
             </Link>
+            {isAuthenticated && (
+              <Link
+                to="/dashboard"
+                className="text-sm font-medium transition-colors"
+                style={{
+                  color: isActive('/dashboard') ? 'var(--matcha-600)' : 'var(--text-secondary)',
+                }}
+              >
+                {t("nav.dashboard")}
+              </Link>
+            )}
             <Link
               to="/translate"
               className="text-sm font-medium transition-colors"
@@ -54,32 +81,40 @@ const Header: React.FC = () => {
                 color: isActive('/translate') ? 'var(--matcha-600)' : 'var(--text-secondary)',
               }}
             >
-              Translate
+              {t("nav.translate")}
             </Link>
-            <a
-              href="#how-it-works"
+            <Link
+              to="/pricing"
               className="text-sm font-medium transition-colors"
-              style={{ color: 'var(--text-secondary)' }}
+              style={{
+                color: isActive('/pricing') ? 'var(--matcha-600)' : 'var(--text-secondary)',
+              }}
             >
-              How It Works
-            </a>
-            <a
-              href="#features"
-              className="text-sm font-medium transition-colors"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              Features
-            </a>
+              {t("nav.pricing")}
+            </Link>
           </nav>
 
-          {/* CTA Button */}
+          {/* Auth Section */}
           <div className="hidden md:flex items-center gap-4">
-            <Link
-              to="/translate"
-              className="matcha-btn matcha-btn-primary text-sm px-6 py-2.5"
+            {/* Language Toggle */}
+            <button
+              onClick={toggleLanguage}
+              className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all"
+              style={{
+                background: 'var(--bg-elevated)',
+                color: 'var(--text-secondary)',
+                border: '1px solid var(--border-soft)',
+              }}
+              title={language === "en" ? "Switch to Arabic" : "التبديل إلى الإنجليزية"}
             >
-              Start Translating
-            </Link>
+              {language === "en" ? "AR" : "EN"}
+            </button>
+
+            {isLoading ? (
+              <div className="w-8 h-8 rounded-full animate-pulse" style={{ background: 'var(--bg-elevated)' }} />
+            ) : (
+              <UserMenu />
+            )}
           </div>
 
           {/* Mobile Menu Button */}
@@ -115,39 +150,75 @@ const Header: React.FC = () => {
                 style={{ color: isActive('/') ? 'var(--matcha-600)' : 'var(--text-secondary)' }}
                 onClick={() => setMobileMenuOpen(false)}
               >
-                Home
+                {t("nav.home")}
               </Link>
+              {isAuthenticated && (
+                <Link
+                  to="/dashboard"
+                  className="text-sm font-medium py-2 transition-colors"
+                  style={{ color: isActive('/dashboard') ? 'var(--matcha-600)' : 'var(--text-secondary)' }}
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  {t("nav.dashboard")}
+                </Link>
+              )}
               <Link
                 to="/translate"
                 className="text-sm font-medium py-2 transition-colors"
                 style={{ color: isActive('/translate') ? 'var(--matcha-600)' : 'var(--text-secondary)' }}
                 onClick={() => setMobileMenuOpen(false)}
               >
-                Translate
+                {t("nav.translate")}
               </Link>
-              <a
-                href="#how-it-works"
-                className="text-sm font-medium py-2 transition-colors"
-                style={{ color: 'var(--text-secondary)' }}
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                How It Works
-              </a>
-              <a
-                href="#features"
-                className="text-sm font-medium py-2 transition-colors"
-                style={{ color: 'var(--text-secondary)' }}
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Features
-              </a>
               <Link
-                to="/translate"
-                className="matcha-btn matcha-btn-primary text-sm py-3 mt-2"
+                to="/pricing"
+                className="text-sm font-medium py-2 transition-colors"
+                style={{ color: isActive('/pricing') ? 'var(--matcha-600)' : 'var(--text-secondary)' }}
                 onClick={() => setMobileMenuOpen(false)}
               >
-                Start Translating
+                {t("nav.pricing")}
               </Link>
+
+              {/* Mobile Language Toggle */}
+              <button
+                onClick={toggleLanguage}
+                className="text-sm font-medium py-2 text-left transition-colors flex items-center gap-2"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                {language === "en" ? "العربية (AR)" : "English (EN)"}
+              </button>
+
+              {/* Mobile Auth */}
+              <div className="pt-4 mt-2" style={{ borderTop: '1px solid var(--border-soft)' }}>
+                {isAuthenticated ? (
+                  <Link
+                    to="/settings"
+                    className="text-sm font-medium py-2 block transition-colors"
+                    style={{ color: 'var(--text-secondary)' }}
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    {t("nav.settings")}
+                  </Link>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    <Link
+                      to="/signin"
+                      className="text-sm font-medium py-2 transition-colors"
+                      style={{ color: 'var(--text-secondary)' }}
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      {t("nav.signIn")}
+                    </Link>
+                    <Link
+                      to="/signup"
+                      className="matcha-btn matcha-btn-primary text-sm py-3"
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      {t("nav.getStarted")}
+                    </Link>
+                  </div>
+                )}
+              </div>
             </nav>
           </div>
         )}

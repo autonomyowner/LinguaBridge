@@ -1,0 +1,277 @@
+import { mutation, internalMutation } from "../_generated/server";
+import { v } from "convex/values";
+import { getCurrentUser, getMonthStart, generateApiKey, hashApiKey } from "../lib/utils";
+
+/**
+ * Create or update user on sign-in
+ * Called automatically by auth flow
+ */
+export const createOrUpdate = internalMutation({
+  args: {
+    tokenIdentifier: v.string(),
+    email: v.string(),
+    name: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    // Check if user already exists
+    const existingUser = await ctx.db
+      .query("users")
+      .withIndex("by_token", (q) => q.eq("tokenIdentifier", args.tokenIdentifier))
+      .unique();
+
+    const now = Date.now();
+
+    if (existingUser) {
+      // Update existing user
+      await ctx.db.patch(existingUser._id, {
+        email: args.email,
+        name: args.name ?? existingUser.name,
+        updatedAt: now,
+      });
+      return existingUser._id;
+    }
+
+    // Create new user
+    const userId = await ctx.db.insert("users", {
+      tokenIdentifier: args.tokenIdentifier,
+      email: args.email,
+      name: args.name,
+      subscriptionTier: "free",
+      minutesUsedThisMonth: 0,
+      minutesResetAt: getMonthStart(),
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Create default settings
+    await ctx.db.insert("userSettings", {
+      userId,
+      preferredSourceLanguage: "en",
+      preferredTargetLanguage: "es",
+      autoPlayTranslations: true,
+      voiceSpeed: 1.0,
+      voiceGender: "neutral",
+      theme: "system",
+      fontSize: "medium",
+      showTimestamps: true,
+      emailNotifications: true,
+      sessionReminders: true,
+      updatedAt: now,
+    });
+
+    return userId;
+  },
+});
+
+/**
+ * Update user profile
+ */
+export const updateProfile = mutation({
+  args: {
+    name: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUser(ctx);
+
+    await ctx.db.patch(user._id, {
+      ...args,
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
+/**
+ * Update user settings
+ */
+export const updateSettings = mutation({
+  args: {
+    preferredSourceLanguage: v.optional(v.string()),
+    preferredTargetLanguage: v.optional(v.string()),
+    autoPlayTranslations: v.optional(v.boolean()),
+    voiceSpeed: v.optional(v.number()),
+    voiceGender: v.optional(v.union(v.literal("male"), v.literal("female"), v.literal("neutral"))),
+    theme: v.optional(v.union(v.literal("light"), v.literal("dark"), v.literal("system"))),
+    fontSize: v.optional(v.union(v.literal("small"), v.literal("medium"), v.literal("large"))),
+    showTimestamps: v.optional(v.boolean()),
+    emailNotifications: v.optional(v.boolean()),
+    sessionReminders: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUser(ctx);
+
+    const settings = await ctx.db
+      .query("userSettings")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .unique();
+
+    const now = Date.now();
+
+    if (settings) {
+      await ctx.db.patch(settings._id, {
+        ...args,
+        updatedAt: now,
+      });
+    } else {
+      await ctx.db.insert("userSettings", {
+        userId: user._id,
+        preferredSourceLanguage: args.preferredSourceLanguage ?? "en",
+        preferredTargetLanguage: args.preferredTargetLanguage ?? "es",
+        autoPlayTranslations: args.autoPlayTranslations ?? true,
+        voiceSpeed: args.voiceSpeed ?? 1.0,
+        voiceGender: args.voiceGender ?? "neutral",
+        theme: args.theme ?? "system",
+        fontSize: args.fontSize ?? "medium",
+        showTimestamps: args.showTimestamps ?? true,
+        emailNotifications: args.emailNotifications ?? true,
+        sessionReminders: args.sessionReminders ?? true,
+        updatedAt: now,
+      });
+    }
+
+    return { success: true };
+  },
+});
+
+/**
+ * Create a new API key (Enterprise only)
+ */
+export const createApiKey = mutation({
+  args: {
+    name: v.string(),
+    permissions: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUser(ctx);
+
+    if (user.subscriptionTier !== "enterprise") {
+      throw new Error("API keys are only available for Enterprise users");
+    }
+
+    // Generate a new API key
+    const { key, prefix } = generateApiKey();
+    const keyHash = await hashApiKey(key);
+
+    await ctx.db.insert("apiKeys", {
+      userId: user._id,
+      name: args.name,
+      keyHash,
+      keyPrefix: prefix,
+      permissions: args.permissions,
+      rateLimit: 60, // 60 requests per minute
+      isActive: true,
+      createdAt: Date.now(),
+    });
+
+    // Return the plain key (only shown once!)
+    return { key };
+  },
+});
+
+/**
+ * Revoke an API key
+ */
+export const revokeApiKey = mutation({
+  args: { keyId: v.id("apiKeys") },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUser(ctx);
+
+    const apiKey = await ctx.db.get(args.keyId);
+    if (!apiKey || apiKey.userId !== user._id) {
+      throw new Error("API key not found");
+    }
+
+    await ctx.db.patch(args.keyId, { isActive: false });
+
+    return { success: true };
+  },
+});
+
+/**
+ * Delete user account
+ */
+export const deleteAccount = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getCurrentUser(ctx);
+
+    // Soft delete - mark as inactive
+    await ctx.db.patch(user._id, {
+      isActive: false,
+      updatedAt: Date.now(),
+    });
+
+    // Deactivate all rooms
+    const rooms = await ctx.db
+      .query("rooms")
+      .withIndex("by_creator", (q) => q.eq("creatorId", user._id))
+      .collect();
+
+    for (const room of rooms) {
+      await ctx.db.patch(room._id, { isActive: false, updatedAt: Date.now() });
+    }
+
+    // Deactivate all API keys
+    const apiKeys = await ctx.db
+      .query("apiKeys")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+
+    for (const key of apiKeys) {
+      await ctx.db.patch(key._id, { isActive: false });
+    }
+
+    return { success: true };
+  },
+});
+
+/**
+ * Update user's minutes used (internal)
+ */
+export const addMinutesUsed = internalMutation({
+  args: {
+    userId: v.id("users"),
+    minutes: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
+    if (!user) return;
+
+    const monthStart = getMonthStart();
+    const currentMinutesReset = user.minutesResetAt ?? 0;
+    const currentMinutesUsed = user.minutesUsedThisMonth ?? 0;
+
+    // Reset if new month
+    if (currentMinutesReset < monthStart) {
+      await ctx.db.patch(args.userId, {
+        minutesUsedThisMonth: args.minutes,
+        minutesResetAt: monthStart,
+        updatedAt: Date.now(),
+      });
+    } else {
+      await ctx.db.patch(args.userId, {
+        minutesUsedThisMonth: currentMinutesUsed + args.minutes,
+        updatedAt: Date.now(),
+      });
+    }
+  },
+});
+
+/**
+ * Update subscription tier (internal - called by Stripe webhooks)
+ */
+export const updateSubscriptionTier = internalMutation({
+  args: {
+    userId: v.id("users"),
+    tier: v.union(v.literal("free"), v.literal("pro"), v.literal("enterprise")),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.userId, {
+      subscriptionTier: args.tier,
+      updatedAt: Date.now(),
+    });
+  },
+});
