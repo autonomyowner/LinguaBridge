@@ -467,9 +467,21 @@ interface LanguageProviderProps {
 
 export function LanguageProvider({ children }: LanguageProviderProps) {
   const [language, setLanguageState] = useState<Language>(() => {
-    // Check localStorage for saved preference
+    // Check localStorage for saved preference first
     const saved = localStorage.getItem("travoices-language");
-    return (saved === "ar" || saved === "en") ? saved : "en";
+    if (saved === "ar" || saved === "en") {
+      return saved;
+    }
+
+    // Detect browser language
+    const browserLang = navigator.language || (navigator as any).userLanguage || "en";
+    // Check if browser language starts with "ar" (e.g., "ar", "ar-SA", "ar-EG")
+    if (browserLang.toLowerCase().startsWith("ar")) {
+      return "ar";
+    }
+
+    // Default to English for all other languages
+    return "en";
   });
 
   const isRTL = language === "ar";
