@@ -29,7 +29,10 @@ export const generateLiveKitToken = action({
     }
 
     // Get user details
-    const user = await ctx.runQuery(api.users.queries.getCurrentOrThrow, {});
+    const user = await ctx.runQuery(api.users.queries.getCurrent, {});
+    if (!user) {
+      throw new Error("User not found");
+    }
 
     // Check if user can join (is participant)
     if (!room.userRole) {

@@ -1,6 +1,6 @@
 import { query } from "../_generated/server";
 import { v } from "convex/values";
-import { getCurrentUser, getCurrentUserOrNull, getUserById } from "../lib/utils";
+import { getCurrentUserOrNull, getUserById } from "../lib/utils";
 
 /**
  * Get the currently authenticated user
@@ -14,11 +14,12 @@ export const getCurrent = query({
 
 /**
  * Get the current user (throws if not authenticated)
+ * Note: Returns null instead of throwing for public access
  */
 export const getCurrentOrThrow = query({
   args: {},
   handler: async (ctx) => {
-    return await getCurrentUser(ctx);
+    return await getCurrentUserOrNull(ctx);
   },
 });
 
@@ -38,12 +39,12 @@ export const getById = query({
 export const getSubscriptionDetails = query({
   args: {},
   handler: async (ctx) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUserOrNull(ctx);
 
     return {
-      tier: user.subscriptionTier,
-      minutesUsed: user.minutesUsedThisMonth,
-      minutesResetAt: user.minutesResetAt,
+      tier: user?.subscriptionTier ?? "free",
+      minutesUsed: user?.minutesUsedThisMonth ?? 0,
+      minutesResetAt: user?.minutesResetAt ?? null,
     };
   },
 });
@@ -54,27 +55,33 @@ export const getSubscriptionDetails = query({
 export const getSettings = query({
   args: {},
   handler: async (ctx) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUserOrNull(ctx);
+
+    // Return default settings if not authenticated
+    const defaultSettings = {
+      preferredSourceLanguage: "en",
+      preferredTargetLanguage: "ar",
+      autoPlayTranslations: true,
+      voiceSpeed: 1.0,
+      voiceGender: "neutral" as const,
+      theme: "system" as const,
+      fontSize: "medium" as const,
+      showTimestamps: true,
+      emailNotifications: true,
+      sessionReminders: true,
+    };
+
+    if (!user) {
+      return defaultSettings;
+    }
 
     const settings = await ctx.db
       .query("userSettings")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
       .unique();
 
-    // Return default settings if none exist
     if (!settings) {
-      return {
-        preferredSourceLanguage: "en",
-        preferredTargetLanguage: "es",
-        autoPlayTranslations: true,
-        voiceSpeed: 1.0,
-        voiceGender: "neutral" as const,
-        theme: "system" as const,
-        fontSize: "medium" as const,
-        showTimestamps: true,
-        emailNotifications: true,
-        sessionReminders: true,
-      };
+      return defaultSettings;
     }
 
     return settings;
@@ -140,7 +147,10 @@ export const getUsageStats = query({
 export const getRooms = query({
   args: {},
   handler: async (ctx) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUserOrNull(ctx);
+    if (!user) {
+      return [];
+    }
 
     // Get rooms created by user
     const createdRooms = await ctx.db
@@ -182,9 +192,9 @@ export const getRooms = query({
 export const getApiKeys = query({
   args: {},
   handler: async (ctx) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUserOrNull(ctx);
 
-    if (user.subscriptionTier !== "enterprise") {
+    if (!user || user.subscriptionTier !== "enterprise") {
       return [];
     }
 
