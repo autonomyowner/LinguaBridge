@@ -83,14 +83,8 @@ const App: React.FC = () => {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/admin/map"
-          element={
-            <ProtectedRoute>
-              <AdminMapPage />
-            </ProtectedRoute>
-          }
-        />
+        {/* Public admin map - no auth required */}
+        <Route path="/admin/map" element={<AdminMapPage />} />
 
         {/* 404 - redirect to home */}
         <Route path="*" element={<HomePage />} />
