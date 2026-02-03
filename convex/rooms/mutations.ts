@@ -1,16 +1,17 @@
 import { mutation } from "../_generated/server";
 import { v } from "convex/values";
 import {
-  getCurrentUser,
+  getCurrentUserOrNull,
   canCreateRoom,
   generateRoomCode,
   generateLivekitRoomName,
   getTierLimits,
 } from "../lib/utils";
-import { canUserAccessRoom, isRoomOwner, PERMISSIONS, roleHasPermission } from "../lib/permissions";
+import { canUserAccessRoom, isRoomOwner } from "../lib/permissions";
 
 /**
  * Create a new room
+ * Works without authentication for demo purposes
  */
 export const create = mutation({
   args: {
@@ -21,30 +22,31 @@ export const create = mutation({
     defaultTargetLanguage: v.string(),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
-
-    // Check if user can create more rooms
-    const canCreate = await canCreateRoom(ctx, user);
-    const userTier = user.subscriptionTier ?? "free";
-    if (!canCreate) {
-      const limits = getTierLimits(userTier);
-      throw new Error(
-        `You've reached the maximum of ${limits.maxRooms} rooms for your plan. Upgrade to create more.`
-      );
-    }
+    const user = await getCurrentUserOrNull(ctx);
 
     const now = Date.now();
     const livekitRoomName = generateLivekitRoomName(args.name);
     const accessCode = args.isPublic ? undefined : generateRoomCode();
 
-    // Get max participants based on tier
+    // Use free tier limits for guests, or user's tier
+    const userTier = user?.subscriptionTier ?? "free";
     const limits = getTierLimits(userTier);
 
-    // Create the room
+    // Check room limits only for authenticated users
+    if (user) {
+      const canCreate = await canCreateRoom(ctx, user);
+      if (!canCreate) {
+        throw new Error(
+          `You've reached the maximum of ${limits.maxRooms} rooms for your plan. Upgrade to create more.`
+        );
+      }
+    }
+
+    // Create the room - use a placeholder creator ID for guests
     const roomId = await ctx.db.insert("rooms", {
       name: args.name,
       description: args.description,
-      creatorId: user._id,
+      creatorId: user?._id ?? ("guest" as any), // Guest rooms have "guest" as creator
       isPublic: args.isPublic,
       maxParticipants: limits.maxParticipants,
       defaultSourceLanguage: args.defaultSourceLanguage,
@@ -56,41 +58,43 @@ export const create = mutation({
       updatedAt: now,
     });
 
-    // Add creator as owner participant
-    await ctx.db.insert("participants", {
-      roomId,
-      userId: user._id,
-      role: "owner",
-      preferredLanguage: args.defaultTargetLanguage,
-      isMuted: false,
-      isOnline: false,
-      joinedAt: now,
-      lastSeenAt: now,
-    });
-
-    // Update analytics
-    const todayDate = new Date().toISOString().split("T")[0];
-    const existingAnalytics = await ctx.db
-      .query("analytics")
-      .withIndex("by_user_date", (q) => q.eq("userId", user._id).eq("date", todayDate))
-      .unique();
-
-    if (existingAnalytics) {
-      await ctx.db.patch(existingAnalytics._id, {
-        roomsCreated: existingAnalytics.roomsCreated + 1,
-        updatedAt: now,
-      });
-    } else {
-      await ctx.db.insert("analytics", {
+    // Add creator as owner participant (only if authenticated)
+    if (user) {
+      await ctx.db.insert("participants", {
+        roomId,
         userId: user._id,
-        date: todayDate,
-        minutesUsed: 0,
-        sessionsStarted: 0,
-        messagesTranslated: 0,
-        roomsCreated: 1,
-        languagesUsed: [],
-        updatedAt: now,
+        role: "owner",
+        preferredLanguage: args.defaultTargetLanguage,
+        isMuted: false,
+        isOnline: false,
+        joinedAt: now,
+        lastSeenAt: now,
       });
+
+      // Update analytics
+      const todayDate = new Date().toISOString().split("T")[0];
+      const existingAnalytics = await ctx.db
+        .query("analytics")
+        .withIndex("by_user_date", (q) => q.eq("userId", user._id).eq("date", todayDate))
+        .unique();
+
+      if (existingAnalytics) {
+        await ctx.db.patch(existingAnalytics._id, {
+          roomsCreated: existingAnalytics.roomsCreated + 1,
+          updatedAt: now,
+        });
+      } else {
+        await ctx.db.insert("analytics", {
+          userId: user._id,
+          date: todayDate,
+          minutesUsed: 0,
+          sessionsStarted: 0,
+          messagesTranslated: 0,
+          roomsCreated: 1,
+          languagesUsed: [],
+          updatedAt: now,
+        });
+      }
     }
 
     return { roomId, accessCode, livekitRoomName };
@@ -110,18 +114,20 @@ export const update = mutation({
     defaultTargetLanguage: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUserOrNull(ctx);
     const { roomId, ...updates } = args;
-
-    // Check if user can manage room
-    const canAccess = await canUserAccessRoom(ctx, user._id, roomId, "admin");
-    if (!canAccess) {
-      throw new Error("You don't have permission to update this room");
-    }
 
     const room = await ctx.db.get(roomId);
     if (!room) {
       throw new Error("Room not found");
+    }
+
+    // Check if user can manage room (skip for guest-created rooms)
+    if (user) {
+      const canAccess = await canUserAccessRoom(ctx, user._id, roomId, "admin");
+      if (!canAccess) {
+        throw new Error("You don't have permission to update this room");
+      }
     }
 
     // Generate new access code if switching to private
@@ -152,7 +158,7 @@ export const join = mutation({
     preferredLanguage: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUserOrNull(ctx);
 
     const room = await ctx.db.get(args.roomId);
     if (!room || !room.isActive) {
@@ -164,13 +170,18 @@ export const join = mutation({
       throw new Error("Invalid access code");
     }
 
+    const now = Date.now();
+
+    // If no user, just return success (guest mode)
+    if (!user) {
+      return { success: true, isNew: true, isGuest: true };
+    }
+
     // Check if already a participant
     const existing = await ctx.db
       .query("participants")
       .withIndex("by_room_user", (q) => q.eq("roomId", args.roomId).eq("userId", user._id))
       .unique();
-
-    const now = Date.now();
 
     if (existing) {
       // Update last seen
@@ -213,7 +224,10 @@ export const join = mutation({
 export const leave = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUserOrNull(ctx);
+    if (!user) {
+      return { success: true }; // Guest mode
+    }
 
     const participant = await ctx.db
       .query("participants")
@@ -241,11 +255,14 @@ export const leave = mutation({
 export const deleteRoom = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUserOrNull(ctx);
 
-    const isOwner = await isRoomOwner(ctx, user._id, args.roomId);
-    if (!isOwner) {
-      throw new Error("Only the room owner can delete the room");
+    // Allow deletion for guest-created rooms or by owner
+    if (user) {
+      const isOwner = await isRoomOwner(ctx, user._id, args.roomId);
+      if (!isOwner) {
+        throw new Error("Only the room owner can delete the room");
+      }
     }
 
     // Soft delete
@@ -269,7 +286,11 @@ export const updateParticipant = mutation({
     isOnline: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUserOrNull(ctx);
+    if (!user) {
+      return { success: true }; // Guest mode
+    }
+
     const { roomId, ...updates } = args;
 
     const participant = await ctx.db
@@ -278,7 +299,7 @@ export const updateParticipant = mutation({
       .unique();
 
     if (!participant) {
-      throw new Error("Not a participant in this room");
+      return { success: true }; // Not a participant, skip
     }
 
     await ctx.db.patch(participant._id, {
@@ -300,7 +321,10 @@ export const updateParticipantRole = mutation({
     role: v.union(v.literal("admin"), v.literal("member"), v.literal("viewer")),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUserOrNull(ctx);
+    if (!user) {
+      throw new Error("Authentication required to change roles");
+    }
 
     // Must be admin or owner
     const canAccess = await canUserAccessRoom(ctx, user._id, args.roomId, "admin");
@@ -338,7 +362,10 @@ export const removeParticipant = mutation({
     targetUserId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUserOrNull(ctx);
+    if (!user) {
+      throw new Error("Authentication required to remove participants");
+    }
 
     // Must be admin or owner
     const canAccess = await canUserAccessRoom(ctx, user._id, args.roomId, "admin");
@@ -373,16 +400,19 @@ export const removeParticipant = mutation({
 export const regenerateAccessCode = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
-
-    const isOwner = await isRoomOwner(ctx, user._id, args.roomId);
-    if (!isOwner) {
-      throw new Error("Only the room owner can regenerate the access code");
-    }
+    const user = await getCurrentUserOrNull(ctx);
 
     const room = await ctx.db.get(args.roomId);
     if (!room || room.isPublic) {
       throw new Error("Only private rooms have access codes");
+    }
+
+    // Check ownership only for authenticated users
+    if (user) {
+      const isOwner = await isRoomOwner(ctx, user._id, args.roomId);
+      if (!isOwner) {
+        throw new Error("Only the room owner can regenerate the access code");
+      }
     }
 
     const accessCode = generateRoomCode();
