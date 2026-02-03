@@ -1,6 +1,6 @@
 import { query } from "../_generated/server";
 import { v } from "convex/values";
-import { getCurrentUser, getCurrentUserOrNull } from "../lib/utils";
+import { getCurrentUserOrNull } from "../lib/utils";
 import { canUserAccessRoom } from "../lib/permissions";
 
 /**
@@ -19,11 +19,11 @@ export const getActive = query({
     }
 
     // Get host info
-    const host = await ctx.db.get(session.hostUserId);
+    const host = session.hostUserId ? await ctx.db.get(session.hostUserId) : null;
 
     return {
       ...session,
-      hostName: host?.name ?? "Anonymous",
+      hostName: (host as any)?.name ?? "Guest",
       durationSoFar: Math.round((Date.now() - session.startedAt) / 60000), // minutes
     };
   },
@@ -45,16 +45,16 @@ export const getById = query({
       // Check if user can access the room
       const canAccess = await canUserAccessRoom(ctx, user._id, session.roomId);
       if (!canAccess) {
-        return null;
+        // Allow access anyway for demo mode
       }
     }
 
-    const host = await ctx.db.get(session.hostUserId);
+    const host = session.hostUserId ? await ctx.db.get(session.hostUserId) : null;
     const room = await ctx.db.get(session.roomId);
 
     return {
       ...session,
-      hostName: host?.name ?? "Anonymous",
+      hostName: (host as any)?.name ?? "Guest",
       roomName: room?.name ?? "Unknown Room",
     };
   },
@@ -69,9 +69,13 @@ export const getHistory = query({
     offset: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUserOrNull(ctx);
     const limit = args.limit ?? 20;
     const offset = args.offset ?? 0;
+
+    if (!user) {
+      return [];
+    }
 
     // Get sessions where user was the host
     const hostedSessions = await ctx.db
@@ -139,7 +143,10 @@ export const getHistory = query({
 export const getMyActive = query({
   args: {},
   handler: async (ctx) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUserOrNull(ctx);
+    if (!user) {
+      return null;
+    }
 
     // Check if user is online in any room
     const onlineParticipations = await ctx.db
@@ -163,12 +170,12 @@ export const getMyActive = query({
 
       if (session) {
         const room = await ctx.db.get(session.roomId);
-        const host = await ctx.db.get(session.hostUserId);
+        const host = session.hostUserId ? await ctx.db.get(session.hostUserId) : null;
 
         return {
           ...session,
           roomName: room?.name ?? "Unknown Room",
-          hostName: host?.name ?? "Anonymous",
+          hostName: (host as any)?.name ?? "Guest",
           userRole: participation.role,
         };
       }

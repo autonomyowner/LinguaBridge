@@ -110,8 +110,8 @@ export default defineSchema({
   sessions: defineTable({
     roomId: v.id("rooms"),
 
-    // Session host
-    hostUserId: v.id("users"),
+    // Session host (optional for guest sessions)
+    hostUserId: v.optional(v.id("users")),
 
     // Timing
     startedAt: v.number(),

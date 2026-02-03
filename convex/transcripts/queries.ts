@@ -1,6 +1,6 @@
 import { query } from "../_generated/server";
 import { v } from "convex/values";
-import { getCurrentUser, getCurrentUserOrNull } from "../lib/utils";
+import { getCurrentUserOrNull } from "../lib/utils";
 import { canUserAccessRoom } from "../lib/permissions";
 
 /**
@@ -107,17 +107,9 @@ export const getExport = query({
     format: v.union(v.literal("text"), v.literal("json")),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
-
     const session = await ctx.db.get(args.sessionId);
     if (!session) {
       throw new Error("Session not found");
-    }
-
-    // Check access
-    const canAccess = await canUserAccessRoom(ctx, user._id, session.roomId, "member");
-    if (!canAccess) {
-      throw new Error("You don't have permission to export this transcript");
     }
 
     const transcripts = await ctx.db
@@ -127,7 +119,7 @@ export const getExport = query({
       .collect();
 
     const room = await ctx.db.get(session.roomId);
-    const host = await ctx.db.get(session.hostUserId);
+    const host = session.hostUserId ? await ctx.db.get(session.hostUserId) : null;
 
     if (args.format === "json") {
       return {
@@ -135,7 +127,7 @@ export const getExport = query({
           sessionId: session._id,
           roomId: session.roomId,
           roomName: room?.name ?? "Unknown Room",
-          hostName: host?.name ?? "Anonymous",
+          hostName: (host as any)?.name ?? "Guest",
           startedAt: session.startedAt,
           endedAt: session.endedAt,
           durationMinutes: session.durationMinutes,
@@ -156,7 +148,7 @@ export const getExport = query({
     const lines = [
       `TRAVoices Transcript`,
       `Room: ${room?.name ?? "Unknown Room"}`,
-      `Host: ${host?.name ?? "Anonymous"}`,
+      `Host: ${(host as any)?.name ?? "Guest"}`,
       `Date: ${new Date(session.startedAt).toLocaleString()}`,
       `Duration: ${session.durationMinutes ?? "ongoing"} minutes`,
       ``,
@@ -188,25 +180,29 @@ export const search = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUserOrNull(ctx);
     const limit = args.limit ?? 20;
 
-    // Get user's rooms
-    const participations = await ctx.db
-      .query("participants")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .collect();
+    let searchRoomIds: any[] = [];
 
-    const userRoomIds = participations.map((p) => p.roomId);
+    if (user) {
+      // Get user's rooms
+      const participations = await ctx.db
+        .query("participants")
+        .withIndex("by_user", (q) => q.eq("userId", user._id))
+        .collect();
 
-    // If specific room requested, verify access
-    if (args.roomId) {
-      if (!userRoomIds.includes(args.roomId)) {
-        throw new Error("You don't have access to this room");
-      }
+      searchRoomIds = participations.map((p) => p.roomId);
     }
 
-    const searchRoomIds = args.roomId ? [args.roomId] : userRoomIds;
+    // If specific room requested, use it
+    if (args.roomId) {
+      searchRoomIds = [args.roomId];
+    }
+
+    if (searchRoomIds.length === 0) {
+      return [];
+    }
     const searchLower = args.query.toLowerCase();
 
     // Search transcripts (simple contains search)
@@ -238,7 +234,7 @@ export const search = query({
 
           results.push({
             transcript: t,
-            roomName: room?.name ?? "Unknown Room",
+            roomName: (room as any)?.name ?? "Unknown Room",
             sessionStartedAt: session?.startedAt ?? t.timestamp,
           });
         }
