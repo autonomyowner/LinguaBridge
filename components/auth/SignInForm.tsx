@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import { useAuthActions } from "@convex-dev/auth/react";
 import { Link, useNavigate } from "react-router-dom";
 
 interface SignInFormProps {
@@ -7,35 +6,29 @@ interface SignInFormProps {
 }
 
 export function SignInForm({ onSuccess }: SignInFormProps) {
-  const { signIn } = useAuthActions();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setIsLoading(true);
+    setIsSubmitting(true);
 
-    try {
-      const formData = new FormData();
-      formData.set("email", email);
-      formData.set("password", password);
-      formData.set("flow", "signIn");
+    // Simple validation
+    if (!email.trim() || !password) {
+      setError("Please enter email and password.");
+      setIsSubmitting(false);
+      return;
+    }
 
-      await signIn("password", formData);
-
-      if (onSuccess) {
-        onSuccess();
-      } else {
-        navigate("/dashboard");
-      }
-    } catch (err: any) {
-      setError(err.message || "Failed to sign in. Please check your credentials.");
-    } finally {
-      setIsLoading(false);
+    // Navigate directly to dashboard (no backend auth)
+    if (onSuccess) {
+      onSuccess();
+    } else {
+      navigate("/dashboard", { replace: true });
     }
   };
 
@@ -62,6 +55,7 @@ export function SignInForm({ onSuccess }: SignInFormProps) {
               placeholder="you@example.com"
               required
               autoComplete="email"
+              disabled={isSubmitting}
             />
           </div>
 
@@ -75,6 +69,7 @@ export function SignInForm({ onSuccess }: SignInFormProps) {
               placeholder="Enter your password"
               required
               autoComplete="current-password"
+              disabled={isSubmitting}
             />
           </div>
 
@@ -89,10 +84,10 @@ export function SignInForm({ onSuccess }: SignInFormProps) {
 
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isSubmitting}
             className="w-full matcha-btn matcha-btn-primary py-3 font-semibold"
           >
-            {isLoading ? (
+            {isSubmitting ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 Signing in...

@@ -14,6 +14,7 @@ import DashboardPage from "./pages/DashboardPage";
 import TRAVoicesPage from "./pages/TRAVoicesPage";
 import SettingsPage from "./pages/SettingsPage";
 import SessionHistoryPage from "./pages/SessionHistoryPage";
+import AdminMapPage from "./pages/AdminMapPage";
 
 const App: React.FC = () => {
   return (
@@ -79,6 +80,14 @@ const App: React.FC = () => {
           element={
             <ProtectedRoute>
               <SessionHistoryPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/map"
+          element={
+            <ProtectedRoute>
+              <AdminMapPage />
             </ProtectedRoute>
           }
         />

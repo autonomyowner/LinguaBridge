@@ -1,14 +1,12 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { authTables } from "@convex-dev/auth/server";
 
 // TRAVoices Database Schema
 // Real-time AI voice translation SaaS
 // Pricing: Free ($0) | Pro ($19/mo) | Enterprise ($99/mo)
 
 export default defineSchema({
-  // Include auth tables from @convex-dev/auth
-  ...authTables,
+  // Auth tables removed - authentication disabled
 
   // ============================================
   // USERS TABLE

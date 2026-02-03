@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import { useAuthActions } from "@convex-dev/auth/react";
 import { Link, useNavigate } from "react-router-dom";
 
 interface SignUpFormProps {
@@ -7,14 +6,13 @@ interface SignUpFormProps {
 }
 
 export function SignUpForm({ onSuccess }: SignUpFormProps) {
-  const { signIn } = useAuthActions();
   const navigate = useNavigate();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,26 +30,13 @@ export function SignUpForm({ onSuccess }: SignUpFormProps) {
       return;
     }
 
-    setIsLoading(true);
+    setIsSubmitting(true);
 
-    try {
-      const formData = new FormData();
-      formData.set("name", name);
-      formData.set("email", email);
-      formData.set("password", password);
-      formData.set("flow", "signUp");
-
-      await signIn("password", formData);
-
-      if (onSuccess) {
-        onSuccess();
-      } else {
-        navigate("/dashboard");
-      }
-    } catch (err: any) {
-      setError(err.message || "Failed to create account. Please try again.");
-    } finally {
-      setIsLoading(false);
+    // Navigate directly to dashboard (no backend auth)
+    if (onSuccess) {
+      onSuccess();
+    } else {
+      navigate("/dashboard", { replace: true });
     }
   };
 
@@ -78,6 +63,7 @@ export function SignUpForm({ onSuccess }: SignUpFormProps) {
               placeholder="John Doe"
               required
               autoComplete="name"
+              disabled={isSubmitting}
             />
           </div>
 
@@ -91,6 +77,7 @@ export function SignUpForm({ onSuccess }: SignUpFormProps) {
               placeholder="you@example.com"
               required
               autoComplete="email"
+              disabled={isSubmitting}
             />
           </div>
 
@@ -105,6 +92,7 @@ export function SignUpForm({ onSuccess }: SignUpFormProps) {
               required
               autoComplete="new-password"
               minLength={8}
+              disabled={isSubmitting}
             />
           </div>
 
@@ -118,6 +106,7 @@ export function SignUpForm({ onSuccess }: SignUpFormProps) {
               placeholder="Confirm your password"
               required
               autoComplete="new-password"
+              disabled={isSubmitting}
             />
           </div>
 
@@ -132,10 +121,10 @@ export function SignUpForm({ onSuccess }: SignUpFormProps) {
 
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isSubmitting}
             className="w-full matcha-btn matcha-btn-primary py-3 font-semibold"
           >
-            {isLoading ? (
+            {isSubmitting ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 Creating account...

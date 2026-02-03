@@ -1,6 +1,5 @@
 import React from "react";
-import { ConvexReactClient } from "convex/react";
-import { ConvexAuthProvider } from "@convex-dev/auth/react";
+import { ConvexProvider, ConvexReactClient } from "convex/react";
 
 // Initialize the Convex client
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
@@ -11,13 +10,13 @@ interface ConvexClientProviderProps {
 
 /**
  * ConvexClientProvider
- * Wraps the app with Convex Auth provider (which includes Convex provider)
+ * Wraps the app with Convex provider (auth removed)
  */
 export function ConvexClientProvider({ children }: ConvexClientProviderProps) {
   return (
-    <ConvexAuthProvider client={convex}>
+    <ConvexProvider client={convex}>
       {children}
-    </ConvexAuthProvider>
+    </ConvexProvider>
   );
 }
 

@@ -165,6 +165,19 @@ const DashboardPage: React.FC = () => {
                     </p>
                   </Link>
 
+                  <Link
+                    to="/admin/map"
+                    className="p-5 rounded-xl transition-all hover:scale-[1.02]"
+                    style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-soft)" }}
+                  >
+                    <h3 className="text-lg font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
+                      Admin Map
+                    </h3>
+                    <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                      View global activity and analytics
+                    </p>
+                  </Link>
+
                   {user?.subscriptionTier === "free" && (
                     <Link
                       to="/pricing"

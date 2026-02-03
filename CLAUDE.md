@@ -80,6 +80,7 @@ CSS variables defined in `index.html`:
 **Convex Dashboard (Settings > Environment Variables):**
 - `JWT_PRIVATE_KEY` - RSA private key for auth tokens
 - `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`
+- `GEMINI_API_KEY` - Google Gemini API key for AI translation
 - `SITE_URL` - Production URL (https://travoices.xyz)
 
 ## Deployment

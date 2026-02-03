@@ -1,11 +1,7 @@
 import React, { createContext, useContext, ReactNode } from "react";
-import { useQuery } from "convex/react";
-import { useAuthActions } from "@convex-dev/auth/react";
-import { api } from "../convex/_generated/api";
-import { Doc } from "../convex/_generated/dataModel";
 
 interface AuthContextType {
-  user: Doc<"users"> | null | undefined;
+  user: null;
   isLoading: boolean;
   isAuthenticated: boolean;
   signOut: () => Promise<void>;
@@ -18,22 +14,18 @@ interface AuthProviderProps {
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
-  const user = useQuery(api.users.queries.getCurrent);
-  const { signOut } = useAuthActions();
-
-  const isLoading = user === undefined;
-  const isAuthenticated = !!user;
-
+  // Auth system removed - always allow access
   const handleSignOut = async () => {
-    await signOut();
+    // No-op since there's no auth backend
+    window.location.href = "/";
   };
 
   return (
     <AuthContext.Provider
       value={{
-        user,
-        isLoading,
-        isAuthenticated,
+        user: null,
+        isLoading: false,
+        isAuthenticated: true, // Always authenticated since auth is removed
         signOut: handleSignOut,
       }}
     >
@@ -52,7 +44,6 @@ export function useAuth() {
 
 /**
  * Hook to get the current user
- * Throws if not authenticated
  */
 export function useCurrentUser() {
   const { user, isLoading, isAuthenticated } = useAuth();
