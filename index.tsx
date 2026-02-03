@@ -4,6 +4,7 @@ import App from "./App";
 import { ConvexClientProvider } from "./providers/ConvexClientProvider";
 import { AuthProvider } from "./providers/AuthContext";
 import { LanguageProvider } from "./providers/LanguageContext";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
@@ -13,12 +14,14 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <ConvexClientProvider>
-      <AuthProvider>
-        <LanguageProvider>
-          <App />
-        </LanguageProvider>
-      </AuthProvider>
-    </ConvexClientProvider>
+    <ErrorBoundary>
+      <ConvexClientProvider>
+        <AuthProvider>
+          <LanguageProvider>
+            <App />
+          </LanguageProvider>
+        </AuthProvider>
+      </ConvexClientProvider>
+    </ErrorBoundary>
   </React.StrictMode>
 );
