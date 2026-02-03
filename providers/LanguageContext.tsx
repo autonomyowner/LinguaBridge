@@ -465,30 +465,47 @@ interface LanguageProviderProps {
   children: ReactNode;
 }
 
-export function LanguageProvider({ children }: LanguageProviderProps) {
-  const [language, setLanguageState] = useState<Language>(() => {
+function getInitialLanguage(): Language {
+  try {
     // Check localStorage for saved preference first
-    const saved = localStorage.getItem("travoices-language");
-    if (saved === "ar" || saved === "en") {
-      return saved;
+    if (typeof window !== "undefined" && window.localStorage) {
+      const saved = localStorage.getItem("travoices-language");
+      if (saved === "ar" || saved === "en") {
+        return saved;
+      }
     }
 
     // Detect browser language
-    const browserLang = navigator.language || (navigator as any).userLanguage || "en";
-    // Check if browser language starts with "ar" (e.g., "ar", "ar-SA", "ar-EG")
-    if (browserLang.toLowerCase().startsWith("ar")) {
-      return "ar";
+    if (typeof navigator !== "undefined" && navigator.language) {
+      const browserLang = navigator.language;
+      // Check if browser language starts with "ar" (e.g., "ar", "ar-SA", "ar-EG")
+      if (browserLang.toLowerCase().startsWith("ar")) {
+        return "ar";
+      }
     }
+  } catch (e) {
+    // Ignore errors from localStorage/navigator access
+    console.warn("Could not detect language preference:", e);
+  }
 
-    // Default to English for all other languages
-    return "en";
-  });
+  // Default to English
+  return "en";
+}
+
+export function LanguageProvider({ children }: LanguageProviderProps) {
+  const [language, setLanguageState] = useState<Language>(getInitialLanguage);
 
   const isRTL = language === "ar";
 
   const setLanguage = (lang: Language) => {
     setLanguageState(lang);
-    localStorage.setItem("travoices-language", lang);
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        localStorage.setItem("travoices-language", lang);
+      }
+    } catch (e) {
+      console.warn("Could not save language preference:", e);
+    }
   };
 
   const t = (key: string): string => {
