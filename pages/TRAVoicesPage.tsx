@@ -109,6 +109,8 @@ const TRAVoicesPage: React.FC = () => {
   }, [currentSessionId, endSession]);
 
   const connectBridge = async () => {
+    console.log('[TRAVoices v2] Using findOrCreateRoom - room sync enabled');
+
     if (!isAuthenticated) {
       setError(t('translate.signInToStart'));
       return;
