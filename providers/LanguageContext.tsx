@@ -465,46 +465,41 @@ interface LanguageProviderProps {
   children: ReactNode;
 }
 
-function getInitialLanguage(): Language {
-  try {
-    // Check localStorage for saved preference first
-    if (typeof window !== "undefined" && window.localStorage) {
+export function LanguageProvider({ children }: LanguageProviderProps) {
+  const [language, setLanguageState] = useState<Language>("en");
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Detect language on mount (client-side only)
+  useEffect(() => {
+    if (isInitialized) return;
+
+    let detectedLang: Language = "en";
+
+    try {
+      // Check localStorage first
       const saved = localStorage.getItem("travoices-language");
       if (saved === "ar" || saved === "en") {
-        return saved;
+        detectedLang = saved;
+      } else if (navigator.language?.toLowerCase().startsWith("ar")) {
+        // Detect browser language
+        detectedLang = "ar";
       }
+    } catch (e) {
+      // Ignore errors
     }
 
-    // Detect browser language
-    if (typeof navigator !== "undefined" && navigator.language) {
-      const browserLang = navigator.language;
-      // Check if browser language starts with "ar" (e.g., "ar", "ar-SA", "ar-EG")
-      if (browserLang.toLowerCase().startsWith("ar")) {
-        return "ar";
-      }
-    }
-  } catch (e) {
-    // Ignore errors from localStorage/navigator access
-    console.warn("Could not detect language preference:", e);
-  }
-
-  // Default to English
-  return "en";
-}
-
-export function LanguageProvider({ children }: LanguageProviderProps) {
-  const [language, setLanguageState] = useState<Language>(getInitialLanguage);
+    setLanguageState(detectedLang);
+    setIsInitialized(true);
+  }, [isInitialized]);
 
   const isRTL = language === "ar";
 
   const setLanguage = (lang: Language) => {
     setLanguageState(lang);
     try {
-      if (typeof window !== "undefined" && window.localStorage) {
-        localStorage.setItem("travoices-language", lang);
-      }
+      localStorage.setItem("travoices-language", lang);
     } catch (e) {
-      console.warn("Could not save language preference:", e);
+      // Ignore errors
     }
   };
 
