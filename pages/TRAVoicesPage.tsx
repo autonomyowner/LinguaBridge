@@ -7,6 +7,7 @@ import { SUPPORTED_LANGUAGES, TranslationMessage, Language } from '../types';
 import { decode, decodeAudioData, createBlob } from '../audioUtils';
 import Header from '../components/Header';
 import { useAuth } from '../providers/AuthContext';
+import { useLanguage } from '../providers/LanguageContext';
 import { Id } from '../convex/_generated/dataModel';
 
 // Gemini Model Config
@@ -16,6 +17,7 @@ const OUTPUT_SAMPLE_RATE = 24000;
 
 const TRAVoicesPage: React.FC = () => {
   const { user, isAuthenticated } = useAuth();
+  const { t } = useLanguage();
 
   // --- UI State ---
   const [isConnecting, setIsConnecting] = useState(false);
@@ -108,7 +110,7 @@ const TRAVoicesPage: React.FC = () => {
 
   const connectBridge = async () => {
     if (!isAuthenticated) {
-      setError('Please sign in to start a translation session');
+      setError(t('translate.signInToStart'));
       return;
     }
 
@@ -304,18 +306,18 @@ const TRAVoicesPage: React.FC = () => {
                 </svg>
               </div>
               <h2 className="text-2xl font-serif mb-2" style={{ color: 'var(--text-primary)' }}>
-                Sign in Required
+                {t('translate.signInRequired')}
               </h2>
               <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
-                Please sign in to access the translation room
+                {t('translate.signInToAccess')}
               </p>
               <a href="/signin" className="matcha-btn matcha-btn-primary py-3 px-8 inline-block">
-                Sign In
+                {t('translate.signIn')}
               </a>
               <p className="mt-4 text-sm" style={{ color: 'var(--text-muted)' }}>
-                Don't have an account?{' '}
+                {t('translate.noAccount')}{' '}
                 <a href="/signup" className="font-semibold" style={{ color: 'var(--matcha-600)' }}>
-                  Sign up free
+                  {t('translate.signUpFree')}
                 </a>
               </p>
             </div>
@@ -334,8 +336,8 @@ const TRAVoicesPage: React.FC = () => {
         <div className="max-w-6xl mx-auto">
           {/* Page Title */}
           <div className="text-center mb-8">
-            <h1 className="text-3xl md:text-4xl font-serif text-gradient mb-2">Voice Translation Room</h1>
-            <p style={{ color: 'var(--text-secondary)' }}>Real-time multilingual communication powered by AI</p>
+            <h1 className="text-3xl md:text-4xl font-serif text-gradient mb-2">{t('translate.title')}</h1>
+            <p style={{ color: 'var(--text-secondary)' }}>{t('translate.subtitle')}</p>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -348,9 +350,9 @@ const TRAVoicesPage: React.FC = () => {
                 style={{ background: isActive ? 'linear-gradient(135deg, var(--matcha-50), var(--matcha-100))' : 'var(--bg-card)' }}
               >
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>Status</h3>
+                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>{t('translate.status')}</h3>
                   <span className={`matcha-badge ${isActive ? 'matcha-badge-success' : 'matcha-badge-warning'}`}>
-                    {isActive ? 'Live' : 'Offline'}
+                    {isActive ? t('translate.live') : t('translate.offline')}
                   </span>
                 </div>
                 <button
@@ -361,12 +363,12 @@ const TRAVoicesPage: React.FC = () => {
                   {isConnecting ? (
                     <span className="flex items-center justify-center gap-2">
                       <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Connecting...
+                      {t('translate.connecting')}
                     </span>
                   ) : isActive ? (
-                    'End Session'
+                    t('translate.endSession')
                   ) : (
-                    'Start Translation'
+                    t('translate.startTranslation')
                   )}
                 </button>
               </div>
@@ -374,12 +376,12 @@ const TRAVoicesPage: React.FC = () => {
               {/* Quick Start Guide - Only show when not active */}
               {!isActive && (
                 <div className="matcha-card p-6 animate-fade-in" style={{ background: 'var(--bg-matcha-soft)' }}>
-                  <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--matcha-700)' }}>Quick Start</h3>
+                  <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--matcha-700)' }}>{t('translate.quickStart')}</h3>
                   <div className="space-y-4">
                     {[
-                      { step: '1', text: 'Enter a room name to create or join a space' },
-                      { step: '2', text: 'Select your language and translation target' },
-                      { step: '3', text: 'Click Start Translation to begin' }
+                      { step: '1', text: t('translate.step1') },
+                      { step: '2', text: t('translate.step2') },
+                      { step: '3', text: t('translate.step3') }
                     ].map((item, i) => (
                       <div key={i} className="flex gap-3">
                         <span
@@ -397,30 +399,30 @@ const TRAVoicesPage: React.FC = () => {
 
               {/* Configuration Panel */}
               <div className="matcha-card p-6">
-                <h3 className="text-sm font-semibold mb-5" style={{ color: 'var(--text-secondary)' }}>Configuration</h3>
+                <h3 className="text-sm font-semibold mb-5" style={{ color: 'var(--text-secondary)' }}>{t('translate.configuration')}</h3>
 
                 <div className="space-y-5">
                   <div className="space-y-4">
                     <div>
-                      <label className="matcha-label">Room Name</label>
+                      <label className="matcha-label">{t('translate.roomName')}</label>
                       <input
                         type="text"
                         value={roomName}
                         onChange={e => setRoomName(e.target.value)}
                         disabled={isActive}
                         className="matcha-input"
-                        placeholder="Enter room name..."
+                        placeholder={t('translate.enterRoomName')}
                       />
                     </div>
                     <div>
-                      <label className="matcha-label">Your Name</label>
+                      <label className="matcha-label">{t('translate.yourName')}</label>
                       <input
                         type="text"
                         value={userName}
                         onChange={e => setUserName(e.target.value)}
                         disabled={isActive}
                         className="matcha-input"
-                        placeholder="Enter your name..."
+                        placeholder={t('translate.enterYourName')}
                       />
                     </div>
                   </div>
@@ -428,7 +430,7 @@ const TRAVoicesPage: React.FC = () => {
                   <div className="pt-4" style={{ borderTop: '1px solid var(--border-soft)' }}>
                     <div className="space-y-4">
                       <div>
-                        <label className="matcha-label">I Speak</label>
+                        <label className="matcha-label">{t('translate.iSpeak')}</label>
                         <select
                           value={myLang.code}
                           onChange={e => setMyLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)}
@@ -451,7 +453,7 @@ const TRAVoicesPage: React.FC = () => {
                       </div>
 
                       <div>
-                        <label className="matcha-label">Translate To</label>
+                        <label className="matcha-label">{t('translate.translateTo')}</label>
                         <select
                           value={theirLang.code}
                           onChange={e => setTheirLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)}
@@ -472,8 +474,8 @@ const TRAVoicesPage: React.FC = () => {
               {isActive && (
                 <div className="matcha-card p-6 animate-fade-in">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>Participants</h3>
-                    <span className="matcha-badge matcha-badge-success">{participants.length + 1} in room</span>
+                    <h3 className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>{t('translate.participants')}</h3>
+                    <span className="matcha-badge matcha-badge-success">{participants.length + 1} {t('translate.inRoom')}</span>
                   </div>
 
                   <div className="space-y-3">
@@ -492,14 +494,14 @@ const TRAVoicesPage: React.FC = () => {
                           <p className="font-medium truncate" style={{ color: 'var(--text-primary)' }}>{userName}</p>
                           <p className="text-xs" style={{ color: 'var(--matcha-600)' }}>{myLang.flag} {myLang.name} → {theirLang.flag} {theirLang.name}</p>
                         </div>
-                        <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ background: 'var(--matcha-200)', color: 'var(--matcha-700)' }}>You</span>
+                        <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ background: 'var(--matcha-200)', color: 'var(--matcha-700)' }}>{t('translate.you')}</span>
                       </div>
                     </div>
 
                     {participants.length === 0 ? (
                       <div className="py-8 text-center" style={{ color: 'var(--text-muted)' }}>
-                        <p className="text-sm">Waiting for others to join...</p>
-                        <p className="text-xs mt-1">Share room: <span style={{ color: 'var(--matcha-600)' }}>{roomName}</span></p>
+                        <p className="text-sm">{t('translate.waitingForOthers')}</p>
+                        <p className="text-xs mt-1">{t('translate.shareRoom')} <span style={{ color: 'var(--matcha-600)' }}>{roomName}</span></p>
                       </div>
                     ) : (
                       participants.map((participant) => {
@@ -522,12 +524,12 @@ const TRAVoicesPage: React.FC = () => {
                               <div className="flex-1 min-w-0">
                                 <p className="font-medium truncate" style={{ color: 'var(--text-primary)' }}>{participant.name || participant.identity}</p>
                                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                  {participantLang ? `${participantLang.flag} ${participantLang.name}` : 'Language not set'}
+                                  {participantLang ? `${participantLang.flag} ${participantLang.name}` : t('translate.languageNotSet')}
                                 </p>
                               </div>
                               <span className="flex items-center gap-1">
                                 <span className="w-2 h-2 rounded-full animate-pulse-soft" style={{ background: 'var(--matcha-500)' }} />
-                                <span className="text-xs font-medium" style={{ color: 'var(--matcha-600)' }}>Live</span>
+                                <span className="text-xs font-medium" style={{ color: 'var(--matcha-600)' }}>{t('translate.live')}</span>
                               </span>
                             </div>
                           </div>
@@ -562,12 +564,12 @@ const TRAVoicesPage: React.FC = () => {
                       className={`w-3 h-3 rounded-full ${isActive ? 'animate-pulse-ring' : ''}`}
                       style={{ background: isActive ? 'var(--matcha-500)' : 'var(--text-muted)' }}
                     />
-                    <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Conversation</h2>
+                    <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>{t('translate.conversation')}</h2>
                   </div>
                   <div className="flex items-center gap-4">
                     {isActive && (
                       <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                        {participants.length} other{participants.length !== 1 ? 's' : ''} connected
+                        {participants.length} {participants.length !== 1 ? t('translate.othersConnectedPlural') : t('translate.othersConnected')}
                       </span>
                     )}
                     <button
@@ -575,7 +577,7 @@ const TRAVoicesPage: React.FC = () => {
                       className="text-xs font-medium transition-colors hover:opacity-70"
                       style={{ color: 'var(--text-muted)' }}
                     >
-                      Clear
+                      {t('translate.clear')}
                     </button>
                   </div>
                 </div>
@@ -603,10 +605,10 @@ const TRAVoicesPage: React.FC = () => {
                           </div>
                         </div>
                         <p className="text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>
-                          {isActive ? 'Listening for speech...' : 'No conversation yet'}
+                          {isActive ? t('translate.listeningForSpeech') : t('translate.noConversation')}
                         </p>
                         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                          {isActive ? 'Speak to begin translation' : 'Start translation to begin'}
+                          {isActive ? t('translate.speakToBegin') : t('translate.startToBegin')}
                         </p>
                       </div>
                     ) : (
@@ -627,7 +629,7 @@ const TRAVoicesPage: React.FC = () => {
                           >
                             <div className="flex items-center gap-2 mb-2 text-xs" style={{ opacity: 0.7 }}>
                               <span className="font-medium">
-                                {msg.sender === 'user' ? 'You' : 'Translation'}
+                                {msg.sender === 'user' ? t('translate.you') : t('translate.translation')}
                               </span>
                               <span>·</span>
                               <span>{msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
@@ -661,10 +663,10 @@ const TRAVoicesPage: React.FC = () => {
                     </div>
                     <div>
                       <p className="text-xs font-medium" style={{ color: isActive ? 'var(--matcha-600)' : 'var(--text-muted)' }}>
-                        {isActive ? 'Translation Active' : 'Bridge Standby'}
+                        {isActive ? t('translate.translationActive') : t('translate.bridgeStandby')}
                       </p>
                       <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                        {isActive ? `Streaming to "${roomName}"` : 'Awaiting connection'}
+                        {isActive ? `${t('translate.streamingTo')} "${roomName}"` : t('translate.awaitingConnection')}
                       </p>
                     </div>
                   </div>
@@ -676,7 +678,7 @@ const TRAVoicesPage: React.FC = () => {
                     >
                       <span className="w-1.5 h-1.5 rounded-full animate-pulse-soft" style={{ background: 'var(--matcha-500)' }} />
                       <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                        Session: {lkRoomRef.current.sid.slice(-6)}
+                        {t('translate.session')}: {lkRoomRef.current.sid.slice(-6)}
                       </span>
                     </div>
                   )}

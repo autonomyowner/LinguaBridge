@@ -3,11 +3,13 @@ import { Link } from "react-router-dom";
 import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useAuth } from "../providers/AuthContext";
+import { useLanguage } from "../providers/LanguageContext";
 import Header from "../components/Header";
 import { TIER_LIMITS } from "../convex/schema";
 
 const DashboardPage: React.FC = () => {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const subscription = useQuery(api.subscriptions.queries.getCurrent);
   const rooms = useQuery(api.rooms.queries.getMy);
   const usageStats = useQuery(api.users.queries.getUsageStats);
@@ -23,10 +25,10 @@ const DashboardPage: React.FC = () => {
           {/* Welcome Section */}
           <div className="mb-8">
             <h1 className="text-3xl md:text-4xl font-serif text-gradient mb-2">
-              Welcome back{user?.name ? `, ${user.name.split(" ")[0]}` : ""}
+              {t("dashboard.welcome")}{user?.name ? `, ${user.name.split(" ")[0]}` : ""}
             </h1>
             <p style={{ color: "var(--text-secondary)" }}>
-              Here's what's happening with your translation activity
+              {t("dashboard.activitySubtitle")}
             </p>
           </div>
 
@@ -36,9 +38,9 @@ const DashboardPage: React.FC = () => {
             <div className="matcha-card p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold" style={{ color: "var(--text-secondary)" }}>
-                  Minutes Used
+                  {t("dashboard.minutesUsed")}
                 </h3>
-                <span className="matcha-badge matcha-badge-info">This Month</span>
+                <span className="matcha-badge matcha-badge-info">{t("dashboard.thisMonth")}</span>
               </div>
               <div className="mb-2">
                 <span className="text-3xl font-bold" style={{ color: "var(--text-primary)" }}>
@@ -68,7 +70,7 @@ const DashboardPage: React.FC = () => {
             <div className="matcha-card p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold" style={{ color: "var(--text-secondary)" }}>
-                  Sessions
+                  {t("dashboard.sessions")}
                 </h3>
               </div>
               <div>
@@ -76,7 +78,7 @@ const DashboardPage: React.FC = () => {
                   {usageStats?.sessionsCount ?? 0}
                 </span>
                 <span className="text-sm ml-1" style={{ color: "var(--text-muted)" }}>
-                  this month
+                  {t("dashboard.thisMonth").toLowerCase()}
                 </span>
               </div>
             </div>
@@ -85,7 +87,7 @@ const DashboardPage: React.FC = () => {
             <div className="matcha-card p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold" style={{ color: "var(--text-secondary)" }}>
-                  Translations
+                  {t("dashboard.translations")}
                 </h3>
               </div>
               <div>
@@ -93,7 +95,7 @@ const DashboardPage: React.FC = () => {
                   {usageStats?.messagesTranslated ?? 0}
                 </span>
                 <span className="text-sm ml-1" style={{ color: "var(--text-muted)" }}>
-                  messages
+                  {t("dashboard.messages")}
                 </span>
               </div>
             </div>
@@ -102,7 +104,7 @@ const DashboardPage: React.FC = () => {
             <div className="matcha-card p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold" style={{ color: "var(--text-secondary)" }}>
-                  Languages
+                  {t("dashboard.languages")}
                 </h3>
               </div>
               <div>
@@ -110,7 +112,7 @@ const DashboardPage: React.FC = () => {
                   {usageStats?.languagesUsed?.length ?? 0}
                 </span>
                 <span className="text-sm ml-1" style={{ color: "var(--text-muted)" }}>
-                  used
+                  {t("dashboard.used")}
                 </span>
               </div>
             </div>
@@ -121,7 +123,7 @@ const DashboardPage: React.FC = () => {
             <div className="lg:col-span-2">
               <div className="matcha-card p-6">
                 <h2 className="text-lg font-semibold mb-6" style={{ color: "var(--text-primary)" }}>
-                  Quick Actions
+                  {t("dashboard.quickActions")}
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Link
@@ -132,10 +134,10 @@ const DashboardPage: React.FC = () => {
                     }}
                   >
                     <h3 className="text-lg font-semibold mb-1" style={{ color: "var(--text-inverse)" }}>
-                      Start Translating
+                      {t("dashboard.startTranslating")}
                     </h3>
                     <p className="text-sm opacity-80" style={{ color: "var(--text-inverse)" }}>
-                      Join or create a translation room
+                      {t("dashboard.joinOrCreate")}
                     </p>
                   </Link>
 
@@ -145,10 +147,10 @@ const DashboardPage: React.FC = () => {
                     style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-soft)" }}
                   >
                     <h3 className="text-lg font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
-                      View History
+                      {t("dashboard.viewHistory")}
                     </h3>
                     <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                      Browse past sessions and transcripts
+                      {t("dashboard.browseHistory")}
                     </p>
                   </Link>
 
@@ -158,10 +160,10 @@ const DashboardPage: React.FC = () => {
                     style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-soft)" }}
                   >
                     <h3 className="text-lg font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
-                      Settings
+                      {t("dashboard.settings")}
                     </h3>
                     <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                      Customize your preferences
+                      {t("dashboard.customizePrefs")}
                     </p>
                   </Link>
 
@@ -171,10 +173,10 @@ const DashboardPage: React.FC = () => {
                     style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-soft)" }}
                   >
                     <h3 className="text-lg font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
-                      Admin Map
+                      {t("dashboard.adminMap")}
                     </h3>
                     <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                      View global activity and analytics
+                      {t("dashboard.viewAnalytics")}
                     </p>
                   </Link>
 
@@ -185,10 +187,10 @@ const DashboardPage: React.FC = () => {
                       style={{ background: "var(--terra-50)", border: "1px solid var(--terra-200)" }}
                     >
                       <h3 className="text-lg font-semibold mb-1" style={{ color: "var(--terra-600)" }}>
-                        Upgrade Plan
+                        {t("dashboard.upgradePlan")}
                       </h3>
                       <p className="text-sm" style={{ color: "var(--terra-500)" }}>
-                        Get more minutes and features
+                        {t("dashboard.getMoreMinutes")}
                       </p>
                     </Link>
                   )}
@@ -199,14 +201,14 @@ const DashboardPage: React.FC = () => {
               <div className="matcha-card p-6 mt-6">
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
-                    My Rooms
+                    {t("dashboard.myRooms")}
                   </h2>
                   <Link
                     to="/translate"
                     className="text-sm font-medium transition-colors hover:opacity-80"
                     style={{ color: "var(--matcha-600)" }}
                   >
-                    Create Room
+                    {t("dashboard.createRoom")}
                   </Link>
                 </div>
 
@@ -223,27 +225,27 @@ const DashboardPage: React.FC = () => {
                             {room.name}
                           </h3>
                           <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-                            {room.participantCount} participant{room.participantCount !== 1 ? "s" : ""}
+                            {room.participantCount} {room.participantCount !== 1 ? t("dashboard.participants") : t("dashboard.participant")}
                           </p>
                         </div>
                         <Link
                           to={`/translate?room=${room._id}`}
                           className="matcha-btn matcha-btn-secondary py-2 px-4 text-sm"
                         >
-                          Join
+                          {t("dashboard.join")}
                         </Link>
                       </div>
                     ))}
                   </div>
                 ) : (
                   <div className="text-center py-8" style={{ color: "var(--text-muted)" }}>
-                    <p className="mb-2">No rooms yet</p>
+                    <p className="mb-2">{t("dashboard.noRooms")}</p>
                     <Link
                       to="/translate"
                       className="text-sm font-medium"
                       style={{ color: "var(--matcha-600)" }}
                     >
-                      Create your first room
+                      {t("dashboard.createFirst")}
                     </Link>
                   </div>
                 )}
@@ -254,7 +256,7 @@ const DashboardPage: React.FC = () => {
             <div>
               <div className="matcha-card p-6">
                 <h2 className="text-lg font-semibold mb-6" style={{ color: "var(--text-primary)" }}>
-                  Your Plan
+                  {t("dashboard.yourPlan")}
                 </h2>
 
                 <div
@@ -279,7 +281,9 @@ const DashboardPage: React.FC = () => {
                               : "var(--text-primary)",
                         }}
                       >
-                        {user?.subscriptionTier || "Free"}
+                        {user?.subscriptionTier === "free" ? t("pricing.free") :
+                         user?.subscriptionTier === "pro" ? t("pricing.pro") :
+                         user?.subscriptionTier === "enterprise" ? t("pricing.enterprise") : t("pricing.free")}
                       </h3>
                       <p
                         className="text-sm"
@@ -291,8 +295,8 @@ const DashboardPage: React.FC = () => {
                         }}
                       >
                         {tierLimits.minutesPerMonth === Infinity
-                          ? "Unlimited minutes"
-                          : `${tierLimits.minutesPerMonth} min/month`}
+                          ? t("dashboard.unlimitedMinutes")
+                          : `${tierLimits.minutesPerMonth} ${t("dashboard.minPerMonth")}`}
                       </p>
                     </div>
                     <span
@@ -309,7 +313,7 @@ const DashboardPage: React.FC = () => {
                         : user?.subscriptionTier === "pro"
                         ? "$19"
                         : "$99"}
-                      <span className="text-sm font-normal">/mo</span>
+                      <span className="text-sm font-normal">{t("dashboard.perMo")}</span>
                     </span>
                   </div>
                 </div>
@@ -326,7 +330,7 @@ const DashboardPage: React.FC = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
                     <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                      Up to {tierLimits.maxParticipants} participants
+                      {t("dashboard.upToParticipants").replace("{count}", String(tierLimits.maxParticipants))}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -340,7 +344,7 @@ const DashboardPage: React.FC = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
                     <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                      {tierLimits.maxRooms === Infinity ? "Unlimited" : tierLimits.maxRooms} active rooms
+                      {tierLimits.maxRooms === Infinity ? t("dashboard.unlimited") : tierLimits.maxRooms} {t("dashboard.activeRooms")}
                     </span>
                   </div>
                   {tierLimits.apiAccess && (
@@ -355,7 +359,7 @@ const DashboardPage: React.FC = () => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                       </svg>
                       <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                        API access
+                        {t("dashboard.apiAccess")}
                       </span>
                     </div>
                   )}
@@ -366,7 +370,7 @@ const DashboardPage: React.FC = () => {
                     to="/pricing"
                     className="matcha-btn matcha-btn-primary w-full py-3 text-center"
                   >
-                    Upgrade Plan
+                    {t("dashboard.upgradePlan")}
                   </Link>
                 )}
               </div>
