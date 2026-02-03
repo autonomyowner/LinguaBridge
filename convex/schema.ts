@@ -49,8 +49,8 @@ export default defineSchema({
     name: v.string(),
     description: v.optional(v.string()),
 
-    // Creator/owner
-    creatorId: v.id("users"),
+    // Creator/owner (optional for guest-created rooms)
+    creatorId: v.optional(v.id("users")),
 
     // Room settings
     isPublic: v.boolean(),

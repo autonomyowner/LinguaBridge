@@ -42,11 +42,11 @@ export const create = mutation({
       }
     }
 
-    // Create the room - use a placeholder creator ID for guests
+    // Create the room
     const roomId = await ctx.db.insert("rooms", {
       name: args.name,
       description: args.description,
-      creatorId: user?._id ?? ("guest" as any), // Guest rooms have "guest" as creator
+      creatorId: user?._id, // undefined for guest rooms
       isPublic: args.isPublic,
       maxParticipants: limits.maxParticipants,
       defaultSourceLanguage: args.defaultSourceLanguage,

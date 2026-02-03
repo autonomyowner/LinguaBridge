@@ -1,6 +1,6 @@
 import { query } from "../_generated/server";
 import { v } from "convex/values";
-import { getCurrentUser, getCurrentUserOrNull } from "../lib/utils";
+import { getCurrentUserOrNull } from "../lib/utils";
 import { canUserAccessRoom, getUserRoomRole } from "../lib/permissions";
 
 /**
@@ -26,13 +26,13 @@ export const listPublic = query({
           .withIndex("by_room", (q) => q.eq("roomId", room._id))
           .collect();
 
-        const creator = await ctx.db.get(room.creatorId);
+        const creator = room.creatorId ? await ctx.db.get(room.creatorId) : null;
 
         return {
           ...room,
           participantCount: participants.length,
           onlineCount: participants.filter((p) => p.isOnline).length,
-          creatorName: creator?.name ?? "Anonymous",
+          creatorName: (creator as any)?.name ?? "Guest",
         };
       })
     );
@@ -86,7 +86,7 @@ export const getById = query({
       .first();
 
     // Get creator info
-    const creator = await ctx.db.get(room.creatorId);
+    const creator = room.creatorId ? await ctx.db.get(room.creatorId) : null;
 
     // Get user's role if authenticated
     const userRole = user ? await getUserRoomRole(ctx, user._id, args.roomId) : null;
@@ -97,7 +97,7 @@ export const getById = query({
       participantCount: participants.length,
       onlineCount: participants.filter((p) => p.isOnline).length,
       activeSession,
-      creatorName: creator?.name ?? "Anonymous",
+      creatorName: (creator as any)?.name ?? "Guest",
       userRole,
     };
   },
