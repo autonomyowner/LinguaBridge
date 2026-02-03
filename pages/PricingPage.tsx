@@ -3,11 +3,13 @@ import { Link } from "react-router-dom";
 import { useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useAuth } from "../providers/AuthContext";
+import { useLanguage } from "../providers/LanguageContext";
 import Header from "../components/Header";
 import { TIER_LIMITS } from "../convex/schema";
 
 const PricingPage: React.FC = () => {
   const { user, isAuthenticated } = useAuth();
+  const { t } = useLanguage();
   const upgradeTier = useMutation(api.subscriptions.mutations.upgradeTier);
   const [isLoading, setIsLoading] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState<string | null>(null);
@@ -21,7 +23,8 @@ const PricingPage: React.FC = () => {
     setIsLoading(tier);
     try {
       await upgradeTier({ tier });
-      setSuccess(`Successfully upgraded to ${tier.charAt(0).toUpperCase() + tier.slice(1)}!`);
+      const tierName = tier === "pro" ? t("pricing.pro") : t("pricing.enterprise");
+      setSuccess(`${t("pricing.successUpgrade")} ${tierName}!`);
       setTimeout(() => setSuccess(null), 3000);
     } catch (error) {
       console.error("Failed to upgrade:", error);
@@ -32,61 +35,68 @@ const PricingPage: React.FC = () => {
 
   const tiers = [
     {
-      name: "Free",
+      name: t("pricing.free"),
       price: 0,
       tier: "free" as const,
-      description: "Perfect for trying out TRAVoices",
+      description: t("pricing.freeDesc"),
       limits: TIER_LIMITS.free,
       features: [
-        `${TIER_LIMITS.free.minutesPerMonth} minutes per month`,
-        `Up to ${TIER_LIMITS.free.maxParticipants} participants per room`,
-        `${TIER_LIMITS.free.maxRooms} active rooms`,
-        "Real-time voice translation",
-        "12 supported languages",
-        "Basic transcripts",
+        `${TIER_LIMITS.free.minutesPerMonth} ${t("pricing.minutesPerMonth")}`,
+        t("pricing.upToParticipants").replace("{count}", String(TIER_LIMITS.free.maxParticipants)),
+        `${TIER_LIMITS.free.maxRooms} ${t("pricing.activeRooms")}`,
+        t("pricing.realtimeVoice"),
+        t("pricing.supportedLanguages"),
+        t("pricing.basicTranscripts"),
       ],
-      cta: user?.subscriptionTier === "free" ? "Current Plan" : "Get Started",
+      cta: user?.subscriptionTier === "free" ? t("pricing.currentPlan") : t("pricing.getStarted"),
       popular: false,
     },
     {
-      name: "Pro",
+      name: t("pricing.pro"),
       price: 19,
       tier: "pro" as const,
-      description: "For professionals who need more",
+      description: t("pricing.proDesc"),
       limits: TIER_LIMITS.pro,
       features: [
-        `${TIER_LIMITS.pro.minutesPerMonth} minutes per month`,
-        `Up to ${TIER_LIMITS.pro.maxParticipants} participants per room`,
-        `${TIER_LIMITS.pro.maxRooms} active rooms`,
-        "Everything in Free",
-        "Priority support",
-        "Session recordings",
-        "Transcript exports",
-        "Custom voice settings",
+        `${TIER_LIMITS.pro.minutesPerMonth} ${t("pricing.minutesPerMonth")}`,
+        t("pricing.upToParticipants").replace("{count}", String(TIER_LIMITS.pro.maxParticipants)),
+        `${TIER_LIMITS.pro.maxRooms} ${t("pricing.activeRooms")}`,
+        t("pricing.everythingInFree"),
+        t("pricing.prioritySupport"),
+        t("pricing.sessionRecordings"),
+        t("pricing.transcriptExports"),
+        t("pricing.customVoice"),
       ],
-      cta: user?.subscriptionTier === "pro" ? "Current Plan" : "Upgrade to Pro",
+      cta: user?.subscriptionTier === "pro" ? t("pricing.currentPlan") : t("pricing.upgradeToPro"),
       popular: true,
     },
     {
-      name: "Enterprise",
+      name: t("pricing.enterprise"),
       price: 99,
       tier: "enterprise" as const,
-      description: "For teams and businesses",
+      description: t("pricing.enterpriseDesc"),
       limits: TIER_LIMITS.enterprise,
       features: [
-        "Unlimited minutes",
-        `Up to ${TIER_LIMITS.enterprise.maxParticipants} participants per room`,
-        "Unlimited active rooms",
-        "Everything in Pro",
-        "API access",
-        "Custom branding",
-        "Dedicated support",
-        "SSO integration",
-        "Analytics dashboard",
+        t("pricing.unlimitedMinutes"),
+        t("pricing.upToParticipants").replace("{count}", String(TIER_LIMITS.enterprise.maxParticipants)),
+        t("pricing.unlimitedRooms"),
+        t("pricing.everythingInPro"),
+        t("pricing.apiAccess"),
+        t("pricing.customBranding"),
+        t("pricing.dedicatedSupport"),
+        t("pricing.ssoIntegration"),
+        t("pricing.analyticsDashboard"),
       ],
-      cta: user?.subscriptionTier === "enterprise" ? "Current Plan" : "Go Enterprise",
+      cta: user?.subscriptionTier === "enterprise" ? t("pricing.currentPlan") : t("pricing.goEnterprise"),
       popular: false,
     },
+  ];
+
+  const faqs = [
+    { q: t("pricing.faq1Q"), a: t("pricing.faq1A") },
+    { q: t("pricing.faq2Q"), a: t("pricing.faq2A") },
+    { q: t("pricing.faq3Q"), a: t("pricing.faq3A") },
+    { q: t("pricing.faq4Q"), a: t("pricing.faq4A") },
   ];
 
   return (
@@ -108,10 +118,10 @@ const PricingPage: React.FC = () => {
           {/* Header */}
           <div className="text-center mb-12">
             <h1 className="text-4xl md:text-5xl font-serif text-gradient mb-4">
-              Simple, Transparent Pricing
+              {t("pricing.title")}
             </h1>
             <p className="text-lg max-w-2xl mx-auto" style={{ color: "var(--text-secondary)" }}>
-              Choose the plan that's right for you. Upgrade or downgrade anytime.
+              {t("pricing.subtitle")}
             </p>
           </div>
 
@@ -119,7 +129,7 @@ const PricingPage: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
             {tiers.map((tier) => (
               <div
-                key={tier.name}
+                key={tier.tier}
                 className={`matcha-card p-8 relative ${
                   tier.popular ? "ring-2" : ""
                 }`}
@@ -133,7 +143,7 @@ const PricingPage: React.FC = () => {
                     className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full text-sm font-semibold"
                     style={{ background: "var(--matcha-500)", color: "var(--text-inverse)" }}
                   >
-                    Most Popular
+                    {t("pricing.mostPopular")}
                   </div>
                 )}
 
@@ -148,7 +158,7 @@ const PricingPage: React.FC = () => {
                     <span className="text-4xl font-bold" style={{ color: "var(--text-primary)" }}>
                       ${tier.price}
                     </span>
-                    <span style={{ color: "var(--text-muted)" }}>/month</span>
+                    <span style={{ color: "var(--text-muted)" }}>{t("pricing.perMonth")}</span>
                   </div>
                 </div>
 
@@ -182,7 +192,7 @@ const PricingPage: React.FC = () => {
                       className="w-full py-3 rounded-xl text-center font-semibold"
                       style={{ background: "var(--bg-elevated)", color: "var(--text-muted)" }}
                     >
-                      Current Plan
+                      {t("pricing.currentPlan")}
                     </div>
                   ) : (
                     <Link
@@ -197,7 +207,7 @@ const PricingPage: React.FC = () => {
                     className="w-full py-3 rounded-xl text-center font-semibold"
                     style={{ background: "var(--matcha-100)", color: "var(--matcha-700)" }}
                   >
-                    Current Plan
+                    {t("pricing.currentPlan")}
                   </div>
                 ) : (
                   <button
@@ -210,7 +220,7 @@ const PricingPage: React.FC = () => {
                     {isLoading === tier.tier ? (
                       <span className="flex items-center justify-center gap-2">
                         <span className="w-4 h-4 border-2 border-current/30 border-t-current rounded-full animate-spin" />
-                        Upgrading...
+                        {t("pricing.upgrading")}
                       </span>
                     ) : (
                       tier.cta
@@ -224,28 +234,11 @@ const PricingPage: React.FC = () => {
           {/* FAQ Section */}
           <div className="max-w-3xl mx-auto mt-16">
             <h2 className="text-2xl font-serif text-center mb-8" style={{ color: "var(--text-primary)" }}>
-              Frequently Asked Questions
+              {t("pricing.faqTitle")}
             </h2>
 
             <div className="space-y-4">
-              {[
-                {
-                  q: "Can I change my plan anytime?",
-                  a: "Yes, you can upgrade or downgrade your plan at any time from your settings.",
-                },
-                {
-                  q: "What happens if I exceed my minutes?",
-                  a: "When you reach your monthly limit, you'll be prompted to upgrade. Your ongoing sessions won't be interrupted.",
-                },
-                {
-                  q: "Do unused minutes roll over?",
-                  a: "No, minutes reset at the beginning of each month. We recommend choosing a plan that matches your regular usage.",
-                },
-                {
-                  q: "How do I contact support?",
-                  a: "Pro and Enterprise users get priority support via email. Free users can access our community forums.",
-                },
-              ].map((faq, i) => (
+              {faqs.map((faq, i) => (
                 <div
                   key={i}
                   className="matcha-card p-6"
