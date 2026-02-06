@@ -147,14 +147,14 @@ export const searchUsers = query({
     const searchQuery = args.query.toLowerCase();
     if (searchQuery.length < 2) return [];
 
-    // Get all discoverable users
+    // Get all discoverable users (isActive and isDiscoverable default to true when undefined)
     const allUsers = await ctx.db
       .query("users")
       .filter((q) =>
         q.and(
           q.neq(q.field("_id"), currentUser._id),
-          q.neq(q.field("isDiscoverable"), false), // Include users where isDiscoverable is undefined (default true)
-          q.eq(q.field("isActive"), true)
+          q.neq(q.field("isDiscoverable"), false),
+          q.neq(q.field("isActive"), false)
         )
       )
       .take(100);
