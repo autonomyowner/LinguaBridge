@@ -1,5 +1,6 @@
 import React from "react";
 import { Id } from "../../convex/_generated/dataModel";
+import { useLanguage } from "../../providers/LanguageContext";
 
 interface Conversation {
   partnerId: Id<"users">;
@@ -11,7 +12,7 @@ interface Conversation {
     type: "text" | "voice";
     createdAt: number;
     isFromMe: boolean;
-  };
+  } | null;
   unreadCount: number;
 }
 
@@ -28,6 +29,8 @@ const ConversationList: React.FC<ConversationListProps> = ({
   onSelect,
   isLoading,
 }) => {
+  const { t } = useLanguage();
+
   const formatTime = (timestamp: number) => {
     const now = Date.now();
     const diff = now - timestamp;
@@ -35,10 +38,10 @@ const ConversationList: React.FC<ConversationListProps> = ({
     const hours = Math.floor(diff / 3600000);
     const days = Math.floor(diff / 86400000);
 
-    if (minutes < 1) return "Now";
-    if (minutes < 60) return `${minutes}m`;
-    if (hours < 24) return `${hours}h`;
-    if (days < 7) return `${days}d`;
+    if (minutes < 1) return t("time.now");
+    if (minutes < 60) return t("time.minutesAgo").replace("{n}", String(minutes));
+    if (hours < 24) return t("time.hoursAgo").replace("{n}", String(hours));
+    if (days < 7) return t("time.daysAgo").replace("{n}", String(days));
     return new Date(timestamp).toLocaleDateString();
   };
 
@@ -90,9 +93,9 @@ const ConversationList: React.FC<ConversationListProps> = ({
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
           </svg>
         </div>
-        <p style={{ color: "var(--text-muted)" }}>No conversations yet</p>
+        <p style={{ color: "var(--text-muted)" }}>{t("messages.noConversations")}</p>
         <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
-          Message a friend to start chatting
+          {t("messages.messageToStart")}
         </p>
       </div>
     );
@@ -151,12 +154,14 @@ const ConversationList: React.FC<ConversationListProps> = ({
                 >
                   {conv.partnerName}
                 </span>
-                <span
-                  className="text-xs flex-shrink-0 ml-2"
-                  style={{ color: "var(--text-muted)" }}
-                >
-                  {formatTime(conv.lastMessage.createdAt)}
-                </span>
+                {conv.lastMessage && (
+                  <span
+                    className="text-xs flex-shrink-0 ml-2"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {formatTime(conv.lastMessage.createdAt)}
+                  </span>
+                )}
               </div>
               <div className="flex items-center justify-between">
                 <p
@@ -166,8 +171,14 @@ const ConversationList: React.FC<ConversationListProps> = ({
                     fontWeight: conv.unreadCount > 0 ? 500 : 400,
                   }}
                 >
-                  {conv.lastMessage.isFromMe && "You: "}
-                  {conv.lastMessage.content}
+                  {conv.lastMessage ? (
+                    <>
+                      {conv.lastMessage.isFromMe && t("messages.you") + " "}
+                      {conv.lastMessage.content}
+                    </>
+                  ) : (
+                    <span style={{ fontStyle: "italic" }}>{t("messages.noMessages")}</span>
+                  )}
                 </p>
                 {conv.unreadCount > 0 && (
                   <span

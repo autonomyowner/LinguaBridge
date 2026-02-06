@@ -233,6 +233,48 @@ const en: Record<string, string> = {
   "settings.notifications": "Notifications",
   "settings.save": "Save Changes",
   "settings.saved": "Changes saved!",
+
+  // Friends
+  "friends.title": "Friends",
+  "friends.tabMyFriends": "My Friends",
+  "friends.tabRequests": "Requests",
+  "friends.tabDiscover": "Discover",
+  "friends.noFriends": "No friends yet",
+  "friends.discoverPeople": "Discover people who speak your languages",
+  "friends.findFriends": "Find Friends",
+  "friends.received": "Received",
+  "friends.sent": "Sent",
+  "friends.noPending": "No pending requests",
+  "friends.removeFriendConfirm": "Remove {name} from friends?",
+
+  // Messages
+  "messages.title": "Messages",
+  "messages.selectConversation": "Select a conversation",
+  "messages.chooseToStart": "Choose a friend to start messaging",
+  "messages.noConversations": "No conversations yet",
+  "messages.messageToStart": "Message a friend to start chatting",
+  "messages.you": "You:",
+  "messages.noMessages": "No messages yet",
+
+  // Notifications
+  "notifications.title": "Notifications",
+  "notifications.markAllRead": "Mark all read",
+  "notifications.empty": "No notifications yet",
+  "notifications.viewAll": "View all activity",
+
+  // Time formatting
+  "time.now": "Now",
+  "time.minutesAgo": "{n}m",
+  "time.hoursAgo": "{n}h",
+  "time.daysAgo": "{n}d",
+
+  // Actions
+  "actions.sendMessage": "Send message",
+  "actions.removeFriend": "Remove friend",
+
+  // Navigation (social)
+  "nav.friends": "Friends",
+  "nav.messages": "Messages",
 };
 
 // Arabic translations
@@ -457,6 +499,48 @@ const ar: Record<string, string> = {
   "settings.notifications": "الإشعارات",
   "settings.save": "حفظ التغييرات",
   "settings.saved": "تم الحفظ!",
+
+  // Friends
+  "friends.title": "الأصدقاء",
+  "friends.tabMyFriends": "أصدقائي",
+  "friends.tabRequests": "الطلبات",
+  "friends.tabDiscover": "اكتشاف",
+  "friends.noFriends": "لا يوجد أصدقاء بعد",
+  "friends.discoverPeople": "اكتشف أشخاصاً يتحدثون لغتك",
+  "friends.findFriends": "ابحث عن أصدقاء",
+  "friends.received": "مستلمة",
+  "friends.sent": "مرسلة",
+  "friends.noPending": "لا توجد طلبات معلقة",
+  "friends.removeFriendConfirm": "إزالة {name} من الأصدقاء؟",
+
+  // Messages
+  "messages.title": "الرسائل",
+  "messages.selectConversation": "اختر محادثة",
+  "messages.chooseToStart": "اختر صديقاً لبدء المراسلة",
+  "messages.noConversations": "لا توجد محادثات بعد",
+  "messages.messageToStart": "راسل صديقاً لبدء الدردشة",
+  "messages.you": "أنت:",
+  "messages.noMessages": "لا توجد رسائل بعد",
+
+  // Notifications
+  "notifications.title": "الإشعارات",
+  "notifications.markAllRead": "تحديد الكل كمقروء",
+  "notifications.empty": "لا توجد إشعارات بعد",
+  "notifications.viewAll": "عرض كل النشاط",
+
+  // Time formatting
+  "time.now": "الآن",
+  "time.minutesAgo": "{n}د",
+  "time.hoursAgo": "{n}س",
+  "time.daysAgo": "{n}ي",
+
+  // Actions
+  "actions.sendMessage": "إرسال رسالة",
+  "actions.removeFriend": "إزالة صديق",
+
+  // Navigation (social)
+  "nav.friends": "الأصدقاء",
+  "nav.messages": "الرسائل",
 };
 
 const translations: Record<Language, Record<string, string>> = { en, ar };

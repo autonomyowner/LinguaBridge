@@ -3,6 +3,7 @@ import { useMutation } from "convex/react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
+import { useLanguage } from "../../providers/LanguageContext";
 
 interface FriendCardProps {
   friend: {
@@ -23,11 +24,12 @@ const FriendCard: React.FC<FriendCardProps> = ({
   showUnfriend = true,
 }) => {
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const unfriend = useMutation(api.friends.mutations.unfriend);
   const [isUnfriending, setIsUnfriending] = React.useState(false);
 
   const handleUnfriend = async () => {
-    if (!confirm(`Remove ${friend.name} from friends?`)) return;
+    if (!confirm(t("friends.removeFriendConfirm").replace("{name}", friend.name))) return;
 
     setIsUnfriending(true);
     try {
@@ -136,7 +138,7 @@ const FriendCard: React.FC<FriendCardProps> = ({
           <button
             onClick={handleMessage}
             className="p-2 rounded-lg transition-colors hover:bg-black/5"
-            title="Send message"
+            title={t("actions.sendMessage")}
           >
             <svg
               width="18"
@@ -156,7 +158,7 @@ const FriendCard: React.FC<FriendCardProps> = ({
             onClick={handleUnfriend}
             disabled={isUnfriending}
             className="p-2 rounded-lg transition-colors hover:bg-black/5 disabled:opacity-50"
-            title="Remove friend"
+            title={t("actions.removeFriend")}
           >
             <svg
               width="18"

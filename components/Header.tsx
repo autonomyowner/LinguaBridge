@@ -102,7 +102,7 @@ const Header: React.FC = () => {
                     color: isActive('/friends') ? 'var(--matcha-600)' : 'var(--text-secondary)',
                   }}
                 >
-                  Friends
+                  {t("nav.friends")}
                 </Link>
                 <Link
                   to="/messages"
@@ -111,7 +111,7 @@ const Header: React.FC = () => {
                     color: isActive('/messages') ? 'var(--matcha-600)' : 'var(--text-secondary)',
                   }}
                 >
-                  Messages
+                  {t("nav.messages")}
                 </Link>
               </>
             )}
@@ -212,7 +212,7 @@ const Header: React.FC = () => {
                     style={{ color: isActive('/friends') ? 'var(--matcha-600)' : 'var(--text-secondary)' }}
                     onClick={() => setMobileMenuOpen(false)}
                   >
-                    Friends
+                    {t("nav.friends")}
                   </Link>
                   <Link
                     to="/messages"
@@ -220,7 +220,7 @@ const Header: React.FC = () => {
                     style={{ color: isActive('/messages') ? 'var(--matcha-600)' : 'var(--text-secondary)' }}
                     onClick={() => setMobileMenuOpen(false)}
                   >
-                    Messages
+                    {t("nav.messages")}
                   </Link>
                 </>
               )}

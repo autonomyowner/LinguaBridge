@@ -5,13 +5,29 @@ import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
 import Header from "../components/Header";
 import { ConversationList, MessageThread, MessageInput } from "../components/messages";
+import { useAuth } from "../providers/AuthContext";
+import { useLanguage } from "../providers/LanguageContext";
 
 const MessagesPage: React.FC = () => {
+  const { user } = useAuth();
+  const { t } = useLanguage();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialFriendId = searchParams.get("friendId") as Id<"users"> | null;
   const [selectedFriendId, setSelectedFriendId] = useState<Id<"users"> | null>(
     initialFriendId
   );
+
+  // Ensure user exists in app database
+  const ensureUser = useMutation(api.debug.ensureUserByEmail);
+  const [userEnsured, setUserEnsured] = useState(false);
+
+  useEffect(() => {
+    if (user?.email && !userEnsured) {
+      ensureUser({ email: user.email, name: user.name })
+        .then(() => setUserEnsured(true))
+        .catch(console.error);
+    }
+  }, [user?.email, userEnsured, ensureUser]);
 
   // Data
   const conversations = useQuery(api.messages.queries.listConversations);
@@ -55,7 +71,7 @@ const MessagesPage: React.FC = () => {
     if (!selectedFriendId) return;
 
     // Upload the audio file
-    const uploadUrl = await generateUploadUrl();
+    const uploadUrl = await generateUploadUrl({});
     const response = await fetch(uploadUrl, {
       method: "POST",
       headers: { "Content-Type": blob.type },
@@ -101,7 +117,7 @@ const MessagesPage: React.FC = () => {
                 className="text-xl font-semibold"
                 style={{ color: "var(--text-primary)" }}
               >
-                Messages
+                {t("messages.title")}
               </h1>
             </div>
 
@@ -229,10 +245,10 @@ const MessagesPage: React.FC = () => {
                     className="text-lg font-medium mb-2"
                     style={{ color: "var(--text-primary)" }}
                   >
-                    Select a conversation
+                    {t("messages.selectConversation")}
                   </h2>
                   <p style={{ color: "var(--text-muted)" }}>
-                    Choose a friend to start messaging
+                    {t("messages.chooseToStart")}
                   </p>
                 </div>
               </div>

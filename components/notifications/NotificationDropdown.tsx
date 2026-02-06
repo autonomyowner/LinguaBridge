@@ -2,17 +2,21 @@ import React from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import NotificationItem from "./NotificationItem";
+import { useAuth } from "../../providers/AuthContext";
+import { useLanguage } from "../../providers/LanguageContext";
 
 interface NotificationDropdownProps {
   onClose: () => void;
 }
 
 const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ onClose }) => {
+  const { user } = useAuth();
+  const { t } = useLanguage();
   const notifications = useQuery(api.notifications.queries.list, { limit: 10 });
   const markAllAsRead = useMutation(api.notifications.mutations.markAllAsRead);
 
   const handleMarkAllAsRead = async () => {
-    await markAllAsRead();
+    await markAllAsRead({});
   };
 
   const unreadCount = notifications?.filter((n) => !n.isRead).length ?? 0;
@@ -34,7 +38,7 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ onClose }) 
           className="font-semibold"
           style={{ color: "var(--text-primary)" }}
         >
-          Notifications
+          {t("notifications.title")}
         </h3>
         {unreadCount > 0 && (
           <button
@@ -42,7 +46,7 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ onClose }) 
             className="text-sm transition-colors hover:underline"
             style={{ color: "var(--matcha-600)" }}
           >
-            Mark all read
+            {t("notifications.markAllRead")}
           </button>
         )}
       </div>
@@ -81,7 +85,7 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ onClose }) 
               className="text-sm"
               style={{ color: "var(--text-muted)" }}
             >
-              No notifications yet
+              {t("notifications.empty")}
             </p>
           </div>
         ) : (
@@ -108,7 +112,7 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ onClose }) 
             className="text-sm transition-colors hover:underline"
             style={{ color: "var(--matcha-600)" }}
           >
-            View all activity
+            {t("notifications.viewAll")}
           </a>
         </div>
       )}

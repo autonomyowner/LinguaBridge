@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../convex/_generated/api";
 import Header from "../components/Header";
 import { FriendCard, FriendRequestCard, UserSearchBar, UserDirectory } from "../components/social";
+import { useAuth } from "../providers/AuthContext";
+import { useLanguage } from "../providers/LanguageContext";
 
 type TabType = "friends" | "requests" | "discover";
 
@@ -13,13 +15,27 @@ const FriendsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [searchQuery, setSearchQuery] = useState("");
   const [languageFilter, setLanguageFilter] = useState<string | undefined>();
+  const { user } = useAuth();
+  const { t } = useLanguage();
+
+  // Ensure user exists in app database
+  const ensureUser = useMutation(api.debug.ensureUserByEmail);
+  const [userEnsured, setUserEnsured] = useState(false);
+
+  useEffect(() => {
+    if (user?.email && !userEnsured) {
+      ensureUser({ email: user.email, name: user.name })
+        .then(() => setUserEnsured(true))
+        .catch(console.error);
+    }
+  }, [user?.email, userEnsured, ensureUser]);
 
   // Friends data
   const friends = useQuery(api.friends.queries.list);
   const pendingRequests = useQuery(api.friends.queries.listPending);
   const sentRequests = useQuery(api.friends.queries.listSent);
 
-  // Search/browse data
+  // Search/browse data - use authenticated queries
   const searchResults = useQuery(
     api.friends.queries.searchUsers,
     searchQuery.length >= 2
@@ -30,6 +46,17 @@ const FriendsPage: React.FC = () => {
     api.friends.queries.browseUsers,
     !searchQuery ? { languageFilter } : "skip"
   );
+
+  // Fallback: use debug query that doesn't require Convex auth
+  // This works when Better-Auth cookies aren't syncing properly
+  const fallbackBrowse = useQuery(
+    api.debug.browseAllUsers,
+    !searchQuery ? { excludeEmail: user?.email } : "skip"
+  );
+
+  // Debug query (uncomment to troubleshoot auth issues)
+  // const debugData = useQuery(api.debug.debugBrowse);
+  // console.log("Debug browse data:", debugData);
 
   // Update URL when tab changes
   useEffect(() => {
@@ -46,13 +73,13 @@ const FriendsPage: React.FC = () => {
   };
 
   const tabs = [
-    { id: "friends" as TabType, label: "My Friends", count: friends?.length },
+    { id: "friends" as TabType, label: t("friends.tabMyFriends"), count: friends?.length },
     {
       id: "requests" as TabType,
-      label: "Requests",
+      label: t("friends.tabRequests"),
       count: (pendingRequests?.length ?? 0) + (sentRequests?.length ?? 0),
     },
-    { id: "discover" as TabType, label: "Discover" },
+    { id: "discover" as TabType, label: t("friends.tabDiscover") },
   ];
 
   return (
@@ -65,7 +92,7 @@ const FriendsPage: React.FC = () => {
             className="text-3xl font-serif mb-8"
             style={{ color: "var(--text-primary)" }}
           >
-            Friends
+            {t("friends.title")}
           </h1>
 
           {/* Tabs */}
@@ -156,19 +183,19 @@ const FriendsPage: React.FC = () => {
                     className="text-lg font-medium mb-2"
                     style={{ color: "var(--text-primary)" }}
                   >
-                    No friends yet
+                    {t("friends.noFriends")}
                   </h3>
                   <p
                     className="mb-6"
                     style={{ color: "var(--text-muted)" }}
                   >
-                    Discover people who speak your languages
+                    {t("friends.discoverPeople")}
                   </p>
                   <button
                     onClick={() => setActiveTab("discover")}
                     className="matcha-btn matcha-btn-primary"
                   >
-                    Find Friends
+                    {t("friends.findFriends")}
                   </button>
                 </div>
               ) : (
@@ -189,7 +216,7 @@ const FriendsPage: React.FC = () => {
                   className="text-lg font-medium mb-4 flex items-center gap-2"
                   style={{ color: "var(--text-primary)" }}
                 >
-                  Received
+                  {t("friends.received")}
                   {pendingRequests && pendingRequests.length > 0 && (
                     <span
                       className="px-2 py-0.5 rounded-full text-xs"
@@ -214,7 +241,7 @@ const FriendsPage: React.FC = () => {
                     style={{ background: "var(--bg-elevated)" }}
                   >
                     <p style={{ color: "var(--text-muted)" }}>
-                      No pending requests
+                      {t("friends.noPending")}
                     </p>
                   </div>
                 ) : (
@@ -236,7 +263,7 @@ const FriendsPage: React.FC = () => {
                   className="text-lg font-medium mb-4 flex items-center gap-2"
                   style={{ color: "var(--text-primary)" }}
                 >
-                  Sent
+                  {t("friends.sent")}
                   {sentRequests && sentRequests.length > 0 && (
                     <span
                       className="px-2 py-0.5 rounded-full text-xs"
@@ -261,7 +288,7 @@ const FriendsPage: React.FC = () => {
                     style={{ background: "var(--bg-elevated)" }}
                   >
                     <p style={{ color: "var(--text-muted)" }}>
-                      No pending requests
+                      {t("friends.noPending")}
                     </p>
                   </div>
                 ) : (
@@ -291,12 +318,14 @@ const FriendsPage: React.FC = () => {
                 users={
                   searchQuery.length >= 2
                     ? searchResults ?? []
-                    : browseResults?.users ?? []
+                    : (browseResults?.users && browseResults.users.length > 0)
+                      ? browseResults.users
+                      : fallbackBrowse?.users ?? []
                 }
                 isLoading={
                   searchQuery.length >= 2
                     ? searchResults === undefined
-                    : browseResults === undefined
+                    : browseResults === undefined && fallbackBrowse === undefined
                 }
               />
             </div>
