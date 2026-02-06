@@ -14,7 +14,9 @@ const DashboardPage: React.FC = () => {
   const rooms = useQuery(api.rooms.queries.getMy);
   const usageStats = useQuery(api.users.queries.getUsageStats);
 
-  const tierLimits = user ? TIER_LIMITS[user.subscriptionTier] : TIER_LIMITS.free;
+  // Get tier from subscription query, default to free
+  const userTier = subscription?.tier || "free";
+  const tierLimits = TIER_LIMITS[userTier as keyof typeof TIER_LIMITS] || TIER_LIMITS.free;
 
   return (
     <div className="min-h-screen" style={{ background: "var(--bg-page)" }}>
@@ -167,20 +169,7 @@ const DashboardPage: React.FC = () => {
                     </p>
                   </Link>
 
-                  <Link
-                    to="/admin/map"
-                    className="p-5 rounded-xl transition-all hover:scale-[1.02]"
-                    style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-soft)" }}
-                  >
-                    <h3 className="text-lg font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
-                      {t("dashboard.adminMap")}
-                    </h3>
-                    <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                      {t("dashboard.viewAnalytics")}
-                    </p>
-                  </Link>
-
-                  {user?.subscriptionTier === "free" && (
+                  {userTier === "free" && (
                     <Link
                       to="/pricing"
                       className="p-5 rounded-xl transition-all hover:scale-[1.02]"
@@ -263,9 +252,9 @@ const DashboardPage: React.FC = () => {
                   className="p-4 rounded-xl mb-6"
                   style={{
                     background:
-                      user?.subscriptionTier === "enterprise"
+                      userTier === "enterprise"
                         ? "linear-gradient(135deg, var(--matcha-500), var(--matcha-600))"
-                        : user?.subscriptionTier === "pro"
+                        : userTier === "pro"
                         ? "var(--matcha-100)"
                         : "var(--bg-elevated)",
                   }}
@@ -276,20 +265,20 @@ const DashboardPage: React.FC = () => {
                         className="text-xl font-bold capitalize"
                         style={{
                           color:
-                            user?.subscriptionTier === "enterprise"
+                            userTier === "enterprise"
                               ? "var(--text-inverse)"
                               : "var(--text-primary)",
                         }}
                       >
-                        {user?.subscriptionTier === "free" ? t("pricing.free") :
-                         user?.subscriptionTier === "pro" ? t("pricing.pro") :
-                         user?.subscriptionTier === "enterprise" ? t("pricing.enterprise") : t("pricing.free")}
+                        {userTier === "free" ? t("pricing.free") :
+                         userTier === "pro" ? t("pricing.pro") :
+                         userTier === "enterprise" ? t("pricing.enterprise") : t("pricing.free")}
                       </h3>
                       <p
                         className="text-sm"
                         style={{
                           color:
-                            user?.subscriptionTier === "enterprise"
+                            userTier === "enterprise"
                               ? "rgba(255,255,255,0.8)"
                               : "var(--text-secondary)",
                         }}
@@ -303,14 +292,14 @@ const DashboardPage: React.FC = () => {
                       className="text-2xl font-bold"
                       style={{
                         color:
-                          user?.subscriptionTier === "enterprise"
+                          userTier === "enterprise"
                             ? "var(--text-inverse)"
                             : "var(--text-primary)",
                       }}
                     >
-                      {user?.subscriptionTier === "free"
+                      {userTier === "free"
                         ? "$0"
-                        : user?.subscriptionTier === "pro"
+                        : userTier === "pro"
                         ? "$19"
                         : "$99"}
                       <span className="text-sm font-normal">{t("dashboard.perMo")}</span>
@@ -365,7 +354,7 @@ const DashboardPage: React.FC = () => {
                   )}
                 </div>
 
-                {user?.subscriptionTier !== "enterprise" && (
+                {userTier !== "enterprise" && (
                   <Link
                     to="/pricing"
                     className="matcha-btn matcha-btn-primary w-full py-3 text-center"
