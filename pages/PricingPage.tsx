@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useAuth } from "../providers/AuthContext";
 import { useLanguage } from "../providers/LanguageContext";
@@ -10,6 +10,8 @@ import { TIER_LIMITS } from "../convex/schema";
 const PricingPage: React.FC = () => {
   const { user, isAuthenticated } = useAuth();
   const { t } = useLanguage();
+  const subscription = useQuery(api.subscriptions.queries.getCurrent);
+  const userTier = subscription?.tier || "free";
   const upgradeTier = useMutation(api.subscriptions.mutations.upgradeTier);
   const [isLoading, setIsLoading] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState<string | null>(null);
@@ -48,7 +50,7 @@ const PricingPage: React.FC = () => {
         t("pricing.supportedLanguages"),
         t("pricing.basicTranscripts"),
       ],
-      cta: user?.subscriptionTier === "free" ? t("pricing.currentPlan") : t("pricing.getStarted"),
+      cta: userTier === "free" ? t("pricing.currentPlan") : t("pricing.getStarted"),
       popular: false,
     },
     {
@@ -67,7 +69,7 @@ const PricingPage: React.FC = () => {
         t("pricing.transcriptExports"),
         t("pricing.customVoice"),
       ],
-      cta: user?.subscriptionTier === "pro" ? t("pricing.currentPlan") : t("pricing.upgradeToPro"),
+      cta: userTier === "pro" ? t("pricing.currentPlan") : t("pricing.upgradeToPro"),
       popular: true,
     },
     {
@@ -87,7 +89,7 @@ const PricingPage: React.FC = () => {
         t("pricing.ssoIntegration"),
         t("pricing.analyticsDashboard"),
       ],
-      cta: user?.subscriptionTier === "enterprise" ? t("pricing.currentPlan") : t("pricing.goEnterprise"),
+      cta: userTier === "enterprise" ? t("pricing.currentPlan") : t("pricing.goEnterprise"),
       popular: false,
     },
   ];
@@ -114,6 +116,30 @@ const PricingPage: React.FC = () => {
               {success}
             </div>
           )}
+
+          {/* Beta Banner */}
+          <div
+            className="max-w-2xl mx-auto mb-8 p-4 rounded-xl text-center"
+            style={{
+              background: "linear-gradient(135deg, var(--matcha-100), var(--matcha-50))",
+              border: "2px solid var(--matcha-400)"
+            }}
+          >
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <span
+                className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider"
+                style={{ background: "var(--matcha-500)", color: "var(--text-inverse)" }}
+              >
+                {t("pricing.betaBadge")}
+              </span>
+            </div>
+            <p className="font-semibold text-lg" style={{ color: "var(--matcha-700)" }}>
+              {t("pricing.betaTitle")}
+            </p>
+            <p className="text-sm mt-1" style={{ color: "var(--matcha-600)" }}>
+              {t("pricing.betaSubtitle")}
+            </p>
+          </div>
 
           {/* Header */}
           <div className="text-center mb-12">
@@ -187,7 +213,7 @@ const PricingPage: React.FC = () => {
                 </ul>
 
                 {tier.tier === "free" ? (
-                  user?.subscriptionTier === "free" ? (
+                  userTier === "free" ? (
                     <div
                       className="w-full py-3 rounded-xl text-center font-semibold"
                       style={{ background: "var(--bg-elevated)", color: "var(--text-muted)" }}
@@ -202,7 +228,7 @@ const PricingPage: React.FC = () => {
                       {tier.cta}
                     </Link>
                   )
-                ) : user?.subscriptionTier === tier.tier ? (
+                ) : userTier === tier.tier ? (
                   <div
                     className="w-full py-3 rounded-xl text-center font-semibold"
                     style={{ background: "var(--matcha-100)", color: "var(--matcha-700)" }}

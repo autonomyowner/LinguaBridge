@@ -213,6 +213,11 @@ const en: Record<string, string> = {
   "pricing.dedicatedSupport": "Dedicated support",
   "pricing.ssoIntegration": "SSO integration",
   "pricing.analyticsDashboard": "Analytics dashboard",
+  // Beta Banner
+  "pricing.betaBadge": "Beta",
+  "pricing.betaTitle": "We're in Beta - Everything is FREE!",
+  "pricing.betaSubtitle": "Enjoy all features at no cost while we perfect the experience. No credit card required.",
+
   // FAQ
   "pricing.faqTitle": "Frequently Asked Questions",
   "pricing.faq1Q": "Can I change my plan anytime?",
@@ -537,6 +542,11 @@ const ar: Record<string, string> = {
   "pricing.dedicatedSupport": "دعم مخصص",
   "pricing.ssoIntegration": "تكامل SSO",
   "pricing.analyticsDashboard": "لوحة تحليلات",
+  // Beta Banner
+  "pricing.betaBadge": "تجريبي",
+  "pricing.betaTitle": "نحن في المرحلة التجريبية - كل شيء مجاني!",
+  "pricing.betaSubtitle": "استمتع بجميع الميزات بدون تكلفة بينما نحسن التجربة. لا حاجة لبطاقة ائتمان.",
+
   // FAQ
   "pricing.faqTitle": "الأسئلة الشائعة",
   "pricing.faq1Q": "هل يمكنني تغيير خطتي في أي وقت؟",
