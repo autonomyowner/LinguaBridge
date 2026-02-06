@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { UserMenu } from './UserMenu';
 import { useAuth } from '../providers/AuthContext';
 import { useLanguage } from '../providers/LanguageContext';
+import NotificationBell from './notifications/NotificationBell';
 
 const Header: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -92,6 +93,28 @@ const Header: React.FC = () => {
             >
               {t("nav.pricing")}
             </Link>
+            {isAuthenticated && (
+              <>
+                <Link
+                  to="/friends"
+                  className="text-sm font-medium transition-colors"
+                  style={{
+                    color: isActive('/friends') ? 'var(--matcha-600)' : 'var(--text-secondary)',
+                  }}
+                >
+                  Friends
+                </Link>
+                <Link
+                  to="/messages"
+                  className="text-sm font-medium transition-colors"
+                  style={{
+                    color: isActive('/messages') ? 'var(--matcha-600)' : 'var(--text-secondary)',
+                  }}
+                >
+                  Messages
+                </Link>
+              </>
+            )}
           </nav>
 
           {/* Auth Section */}
@@ -113,7 +136,10 @@ const Header: React.FC = () => {
             {isLoading ? (
               <div className="w-8 h-8 rounded-full animate-pulse" style={{ background: 'var(--bg-elevated)' }} />
             ) : (
-              <UserMenu />
+              <>
+                {isAuthenticated && <NotificationBell />}
+                <UserMenu />
+              </>
             )}
           </div>
 
@@ -178,6 +204,26 @@ const Header: React.FC = () => {
               >
                 {t("nav.pricing")}
               </Link>
+              {isAuthenticated && (
+                <>
+                  <Link
+                    to="/friends"
+                    className="text-sm font-medium py-2 transition-colors"
+                    style={{ color: isActive('/friends') ? 'var(--matcha-600)' : 'var(--text-secondary)' }}
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    Friends
+                  </Link>
+                  <Link
+                    to="/messages"
+                    className="text-sm font-medium py-2 transition-colors"
+                    style={{ color: isActive('/messages') ? 'var(--matcha-600)' : 'var(--text-secondary)' }}
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    Messages
+                  </Link>
+                </>
+              )}
 
               {/* Mobile Language Toggle */}
               <button

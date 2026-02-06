@@ -21,6 +21,10 @@ export default defineSchema({
     name: v.optional(v.string()),
     imageUrl: v.optional(v.string()),
 
+    // Social features
+    spokenLanguages: v.optional(v.array(v.string())), // Languages user speaks
+    isDiscoverable: v.optional(v.boolean()), // Show in user directory (default true)
+
     // Subscription (default to free)
     subscriptionTier: v.optional(v.union(
       v.literal("free"),
@@ -38,7 +42,8 @@ export default defineSchema({
     updatedAt: v.optional(v.number()),
   })
     .index("by_token", ["tokenIdentifier"])
-    .index("by_email", ["email"]),
+    .index("by_email", ["email"])
+    .index("by_discoverable", ["isDiscoverable", "isActive"]),
 
   // ============================================
   // ROOMS TABLE
@@ -257,6 +262,87 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_user", ["userId"]),
+
+  // ============================================
+  // FRIENDSHIPS TABLE
+  // Two-way friend relationships with request workflow
+  // ============================================
+  friendships: defineTable({
+    requesterId: v.id("users"),
+    addresseeId: v.id("users"),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("accepted"),
+      v.literal("rejected")
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_requester", ["requesterId"])
+    .index("by_addressee", ["addresseeId"])
+    .index("by_pair", ["requesterId", "addresseeId"])
+    .index("by_status", ["status"]),
+
+  // ============================================
+  // MESSAGES TABLE
+  // Direct messages between friends (text + voice)
+  // ============================================
+  messages: defineTable({
+    senderId: v.id("users"),
+    receiverId: v.id("users"),
+    type: v.union(v.literal("text"), v.literal("voice")),
+    content: v.string(), // Text content or storage ID for voice
+    duration: v.optional(v.number()), // Duration in seconds for voice messages
+    isRead: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index("by_conversation", ["senderId", "receiverId"])
+    .index("by_receiver_unread", ["receiverId", "isRead"])
+    .index("by_sender", ["senderId"])
+    .index("by_receiver", ["receiverId"]),
+
+  // ============================================
+  // ROOM INVITATIONS TABLE
+  // Direct and link-based room invites
+  // ============================================
+  roomInvitations: defineTable({
+    inviterId: v.id("users"),
+    inviteeId: v.optional(v.id("users")), // null for link-based invites
+    roomId: v.id("rooms"),
+    inviteCode: v.string(), // Unique code for shareable links
+    status: v.union(
+      v.literal("pending"),
+      v.literal("accepted"),
+      v.literal("expired")
+    ),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_invitee", ["inviteeId", "status"])
+    .index("by_code", ["inviteCode"])
+    .index("by_room", ["roomId"])
+    .index("by_inviter", ["inviterId"]),
+
+  // ============================================
+  // NOTIFICATIONS TABLE
+  // In-app notifications for social events
+  // ============================================
+  notifications: defineTable({
+    userId: v.id("users"),
+    type: v.union(
+      v.literal("friend_request"),
+      v.literal("friend_accepted"),
+      v.literal("message"),
+      v.literal("room_invite")
+    ),
+    referenceId: v.string(), // ID of the related entity (friendshipId, messageId, invitationId)
+    title: v.optional(v.string()), // Optional notification title
+    body: v.optional(v.string()), // Optional notification body
+    isRead: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index("by_user_unread", ["userId", "isRead"])
+    .index("by_user_all", ["userId", "createdAt"]),
 });
 
 // ============================================

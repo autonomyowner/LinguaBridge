@@ -12,6 +12,8 @@ import TRAVoicesPage from "./pages/TRAVoicesPage";
 import SettingsPage from "./pages/SettingsPage";
 import SessionHistoryPage from "./pages/SessionHistoryPage";
 import AdminMapPage from "./pages/AdminMapPage";
+import FriendsPage from "./pages/FriendsPage";
+import MessagesPage from "./pages/MessagesPage";
 
 const App: React.FC = () => {
   return (
@@ -27,6 +29,8 @@ const App: React.FC = () => {
         <Route path="/translate" element={<TRAVoicesPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/history" element={<SessionHistoryPage />} />
+        <Route path="/friends" element={<FriendsPage />} />
+        <Route path="/messages" element={<MessagesPage />} />
         <Route path="/admin/map" element={<AdminMapPage />} />
 
         {/* 404 - redirect to home */}

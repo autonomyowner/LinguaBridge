@@ -9,20 +9,32 @@ const SettingsPage: React.FC = () => {
   const { user, signOut } = useAuth();
   const settings = useQuery(api.users.queries.getSettings);
   const subscription = useQuery(api.subscriptions.queries.getCurrent);
+  const currentUser = useQuery(api.users.queries.getCurrent);
+  const userTier = subscription?.tier || "free";
   const updateProfile = useMutation(api.users.mutations.updateProfile);
   const updateSettings = useMutation(api.users.mutations.updateSettings);
+  const updateSocialSettings = useMutation(api.users.mutations.updateSocialSettings);
   const downgradeToFree = useMutation(api.subscriptions.mutations.downgradeToFree);
 
   const [name, setName] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [activeTab, setActiveTab] = useState<"profile" | "preferences" | "subscription">("profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "preferences" | "social" | "subscription">("profile");
+  const [spokenLanguages, setSpokenLanguages] = useState<string[]>([]);
+  const [isDiscoverable, setIsDiscoverable] = useState(true);
 
   useEffect(() => {
     if (user?.name) {
       setName(user.name);
     }
   }, [user]);
+
+  useEffect(() => {
+    if (currentUser) {
+      setSpokenLanguages(currentUser.spokenLanguages || []);
+      setIsDiscoverable(currentUser.isDiscoverable !== false); // Default to true
+    }
+  }, [currentUser]);
 
   const handleSaveProfile = async () => {
     setIsSaving(true);
@@ -55,9 +67,31 @@ const SettingsPage: React.FC = () => {
     }
   };
 
+  const handleToggleLanguage = (langCode: string) => {
+    setSpokenLanguages((prev) =>
+      prev.includes(langCode)
+        ? prev.filter((l) => l !== langCode)
+        : [...prev, langCode]
+    );
+  };
+
+  const handleSaveSocialSettings = async () => {
+    setIsSaving(true);
+    try {
+      await updateSocialSettings({ spokenLanguages, isDiscoverable });
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (error) {
+      console.error("Failed to save social settings:", error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const tabs = [
     { id: "profile", label: "Profile" },
     { id: "preferences", label: "Preferences" },
+    { id: "social", label: "Social" },
     { id: "subscription", label: "Subscription" },
   ];
 
@@ -314,6 +348,84 @@ const SettingsPage: React.FC = () => {
             </div>
           )}
 
+          {/* Social Tab */}
+          {activeTab === "social" && (
+            <div className="space-y-6">
+              {/* Spoken Languages */}
+              <div className="matcha-card p-6">
+                <h3 className="text-lg font-semibold mb-2" style={{ color: "var(--text-primary)" }}>
+                  Languages You Speak
+                </h3>
+                <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>
+                  Select the languages you can speak or understand. This helps others find you.
+                </p>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {SUPPORTED_LANGUAGES.map((lang) => {
+                    const isSelected = spokenLanguages.includes(lang.code);
+                    return (
+                      <button
+                        key={lang.code}
+                        onClick={() => handleToggleLanguage(lang.code)}
+                        className="flex items-center gap-2 px-4 py-3 rounded-xl text-left transition-colors"
+                        style={{
+                          background: isSelected ? "var(--matcha-100)" : "var(--bg-elevated)",
+                          border: isSelected ? "2px solid var(--matcha-500)" : "2px solid transparent",
+                          color: isSelected ? "var(--matcha-700)" : "var(--text-secondary)",
+                        }}
+                      >
+                        <span className="text-xl">{lang.flag}</span>
+                        <span className="font-medium">{lang.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Discoverability */}
+              <div className="matcha-card p-6">
+                <h3 className="text-lg font-semibold mb-4" style={{ color: "var(--text-primary)" }}>
+                  Privacy
+                </h3>
+                <label className="flex items-start gap-4 cursor-pointer">
+                  <div className="pt-0.5">
+                    <input
+                      type="checkbox"
+                      checked={isDiscoverable}
+                      onChange={(e) => setIsDiscoverable(e.target.checked)}
+                      className="w-5 h-5 rounded"
+                      style={{ accentColor: "var(--matcha-600)" }}
+                    />
+                  </div>
+                  <div>
+                    <span className="font-medium block" style={{ color: "var(--text-primary)" }}>
+                      Show me in user directory
+                    </span>
+                    <span className="text-sm" style={{ color: "var(--text-muted)" }}>
+                      When enabled, other users can find you by searching or browsing the directory.
+                      Turn this off if you only want to connect with people who know your email.
+                    </span>
+                  </div>
+                </label>
+              </div>
+
+              {/* Save Button */}
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={handleSaveSocialSettings}
+                  disabled={isSaving}
+                  className="matcha-btn matcha-btn-primary py-2 px-6"
+                >
+                  {isSaving ? "Saving..." : "Save Changes"}
+                </button>
+                {saveSuccess && (
+                  <span className="text-sm" style={{ color: "var(--matcha-600)" }}>
+                    Changes saved!
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Subscription Tab */}
           {activeTab === "subscription" && (
             <div className="space-y-6">
@@ -331,7 +443,7 @@ const SettingsPage: React.FC = () => {
                         className="text-xl font-bold capitalize"
                         style={{ color: "var(--text-primary)" }}
                       >
-                        {user?.subscriptionTier || "Free"}
+                        {userTier || "Free"}
                       </h4>
                       <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
                         {subscription?.usage.minutesUsed ?? 0} /{" "}
@@ -345,9 +457,9 @@ const SettingsPage: React.FC = () => {
                       className="text-2xl font-bold"
                       style={{ color: "var(--text-primary)" }}
                     >
-                      {user?.subscriptionTier === "free"
+                      {userTier === "free"
                         ? "$0"
-                        : user?.subscriptionTier === "pro"
+                        : userTier === "pro"
                         ? "$19"
                         : "$99"}
                       <span className="text-sm font-normal">/mo</span>
@@ -356,7 +468,7 @@ const SettingsPage: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-4">
-                  {user?.subscriptionTier !== "enterprise" && (
+                  {userTier !== "enterprise" && (
                     <a
                       href="/pricing"
                       className="matcha-btn matcha-btn-primary py-2 px-6 inline-block"
@@ -365,7 +477,7 @@ const SettingsPage: React.FC = () => {
                     </a>
                   )}
 
-                  {user?.subscriptionTier !== "free" && (
+                  {userTier !== "free" && (
                     <button
                       onClick={handleDowngrade}
                       className="matcha-btn matcha-btn-secondary py-2 px-6"

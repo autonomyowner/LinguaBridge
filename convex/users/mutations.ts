@@ -1,6 +1,63 @@
 import { mutation, internalMutation } from "../_generated/server";
 import { v } from "convex/values";
 import { getCurrentUser, getMonthStart, generateApiKey, hashApiKey } from "../lib/utils";
+import { getBetterAuthUser } from "../auth";
+
+/**
+ * Ensure the current authenticated user has an app user record
+ * Called after sign-up to create the user profile in our users table
+ */
+export const ensureUser = mutation({
+  args: {},
+  handler: async (ctx) => {
+    // Get the authenticated user from better-auth
+    const authUser = await getBetterAuthUser(ctx);
+    if (!authUser || !authUser.email) {
+      throw new Error("Not authenticated");
+    }
+
+    // Check if user already exists by email
+    const existingUser = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", authUser.email))
+      .first();
+
+    if (existingUser) {
+      return existingUser._id;
+    }
+
+    // Create new user
+    const now = Date.now();
+    const userId = await ctx.db.insert("users", {
+      email: authUser.email,
+      name: authUser.name || undefined,
+      subscriptionTier: "free",
+      minutesUsedThisMonth: 0,
+      minutesResetAt: getMonthStart(),
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Create default settings
+    await ctx.db.insert("userSettings", {
+      userId,
+      preferredSourceLanguage: "en",
+      preferredTargetLanguage: "es",
+      autoPlayTranslations: true,
+      voiceSpeed: 1.0,
+      voiceGender: "neutral",
+      theme: "system",
+      fontSize: "medium",
+      showTimestamps: true,
+      emailNotifications: true,
+      sessionReminders: true,
+      updatedAt: now,
+    });
+
+    return userId;
+  },
+});
 
 /**
  * Create or update user on sign-in
@@ -79,6 +136,32 @@ export const updateProfile = mutation({
       ...args,
       updatedAt: Date.now(),
     });
+
+    return { success: true };
+  },
+});
+
+/**
+ * Update user social settings (spoken languages, discoverability)
+ */
+export const updateSocialSettings = mutation({
+  args: {
+    spokenLanguages: v.optional(v.array(v.string())),
+    isDiscoverable: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUser(ctx);
+
+    const updates: Record<string, any> = { updatedAt: Date.now() };
+
+    if (args.spokenLanguages !== undefined) {
+      updates.spokenLanguages = args.spokenLanguages;
+    }
+    if (args.isDiscoverable !== undefined) {
+      updates.isDiscoverable = args.isDiscoverable;
+    }
+
+    await ctx.db.patch(user._id, updates);
 
     return { success: true };
   },
