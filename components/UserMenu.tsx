@@ -1,12 +1,20 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useQuery } from "convex/react";
+import { api } from "../convex/_generated/api";
 import { useAuth } from "../providers/AuthContext";
+import { useLanguage } from "../providers/LanguageContext";
 
 export function UserMenu() {
   const { user, isAuthenticated, signOut } = useAuth();
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Get subscription tier from Convex
+  const subscription = useQuery(api.subscriptions.queries.getCurrent);
+  const userTier = subscription?.tier || "free";
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -34,10 +42,10 @@ export function UserMenu() {
           className="text-sm font-medium transition-colors hover:opacity-80"
           style={{ color: "var(--text-secondary)" }}
         >
-          Sign In
+          {t("nav.signIn")}
         </Link>
         <Link to="/signup" className="matcha-btn matcha-btn-primary py-2 px-4 text-sm">
-          Get Started
+          {t("nav.getStarted")}
         </Link>
       </div>
     );
@@ -90,11 +98,11 @@ export function UserMenu() {
               <span
                 className="text-xs px-2 py-0.5 rounded-full font-medium capitalize"
                 style={{
-                  background: user?.subscriptionTier === "free" ? "var(--bg-elevated)" : "var(--matcha-100)",
-                  color: user?.subscriptionTier === "free" ? "var(--text-secondary)" : "var(--matcha-700)",
+                  background: userTier === "free" ? "var(--bg-elevated)" : "var(--matcha-100)",
+                  color: userTier === "free" ? "var(--text-secondary)" : "var(--matcha-700)",
                 }}
               >
-                {user?.subscriptionTier || "free"} plan
+                {userTier} {t("menu.plan")}
               </span>
             </div>
           </div>
@@ -115,7 +123,7 @@ export function UserMenu() {
                   d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
                 />
               </svg>
-              Dashboard
+              {t("menu.dashboard")}
             </Link>
 
             <Link
@@ -132,7 +140,7 @@ export function UserMenu() {
                   d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"
                 />
               </svg>
-              Translation Room
+              {t("menu.translationRoom")}
             </Link>
 
             <Link
@@ -155,7 +163,7 @@ export function UserMenu() {
                   d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
                 />
               </svg>
-              Settings
+              {t("menu.settings")}
             </Link>
 
             <Link
@@ -172,7 +180,7 @@ export function UserMenu() {
                   d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"
                 />
               </svg>
-              Upgrade Plan
+              {t("menu.upgradePlan")}
             </Link>
           </div>
 
@@ -191,7 +199,7 @@ export function UserMenu() {
                   d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
                 />
               </svg>
-              Sign Out
+              {t("menu.signOut")}
             </button>
           </div>
         </div>

@@ -2,11 +2,13 @@ import React, { useState, useEffect } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useAuth } from "../providers/AuthContext";
+import { useLanguage } from "../providers/LanguageContext";
 import Header from "../components/Header";
 import { SUPPORTED_LANGUAGES } from "../types";
 
 const SettingsPage: React.FC = () => {
   const { user, signOut } = useAuth();
+  const { t } = useLanguage();
   const settings = useQuery(api.users.queries.getSettings);
   const subscription = useQuery(api.subscriptions.queries.getCurrent);
   const currentUser = useQuery(api.users.queries.getCurrent);
@@ -58,7 +60,7 @@ const SettingsPage: React.FC = () => {
   };
 
   const handleDowngrade = async () => {
-    if (confirm("Are you sure you want to downgrade to the Free plan?")) {
+    if (confirm(t("settings.downgradeConfirm"))) {
       try {
         await downgradeToFree();
       } catch (error) {
@@ -89,10 +91,10 @@ const SettingsPage: React.FC = () => {
   };
 
   const tabs = [
-    { id: "profile", label: "Profile" },
-    { id: "preferences", label: "Preferences" },
-    { id: "social", label: "Social" },
-    { id: "subscription", label: "Subscription" },
+    { id: "profile", label: t("settings.tabProfile") },
+    { id: "preferences", label: t("settings.tabPreferences") },
+    { id: "social", label: t("settings.tabSocial") },
+    { id: "subscription", label: t("settings.tabSubscription") },
   ];
 
   return (
@@ -102,7 +104,7 @@ const SettingsPage: React.FC = () => {
       <main className="relative z-10 px-6 pb-12 pt-8">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-3xl font-serif mb-8" style={{ color: "var(--text-primary)" }}>
-            Settings
+            {t("settings.title")}
           </h1>
 
           {/* Tabs */}
@@ -131,18 +133,18 @@ const SettingsPage: React.FC = () => {
           {activeTab === "profile" && (
             <div className="matcha-card p-6 space-y-6">
               <div>
-                <label className="matcha-label">Display Name</label>
+                <label className="matcha-label">{t("settings.displayName")}</label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="matcha-input max-w-md"
-                  placeholder="Your name"
+                  placeholder={t("settings.yourName")}
                 />
               </div>
 
               <div>
-                <label className="matcha-label">Email</label>
+                <label className="matcha-label">{t("settings.emailLabel")}</label>
                 <input
                   type="email"
                   value={user?.email || ""}
@@ -150,7 +152,7 @@ const SettingsPage: React.FC = () => {
                   className="matcha-input max-w-md opacity-60"
                 />
                 <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-                  Email cannot be changed
+                  {t("settings.emailCannotChange")}
                 </p>
               </div>
 
@@ -160,24 +162,24 @@ const SettingsPage: React.FC = () => {
                   disabled={isSaving}
                   className="matcha-btn matcha-btn-primary py-2 px-6"
                 >
-                  {isSaving ? "Saving..." : "Save Changes"}
+                  {isSaving ? t("settings.saving") : t("settings.saveChanges")}
                 </button>
                 {saveSuccess && (
                   <span className="text-sm" style={{ color: "var(--matcha-600)" }}>
-                    Changes saved!
+                    {t("settings.changesSaved")}
                   </span>
                 )}
               </div>
 
               <div className="pt-6 mt-6" style={{ borderTop: "1px solid var(--border-soft)" }}>
                 <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--terra-500)" }}>
-                  Danger Zone
+                  {t("settings.dangerZone")}
                 </h3>
                 <button
                   onClick={signOut}
                   className="matcha-btn matcha-btn-danger py-2 px-6"
                 >
-                  Sign Out
+                  {t("menu.signOut")}
                 </button>
               </div>
             </div>
@@ -189,11 +191,11 @@ const SettingsPage: React.FC = () => {
               {/* Language Preferences */}
               <div className="matcha-card p-6">
                 <h3 className="text-lg font-semibold mb-4" style={{ color: "var(--text-primary)" }}>
-                  Language Preferences
+                  {t("settings.languagePreferences")}
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="matcha-label">Default Source Language</label>
+                    <label className="matcha-label">{t("settings.defaultSourceLanguage")}</label>
                     <select
                       value={settings.preferredSourceLanguage}
                       onChange={(e) => handleUpdateSetting("preferredSourceLanguage", e.target.value)}
@@ -207,7 +209,7 @@ const SettingsPage: React.FC = () => {
                     </select>
                   </div>
                   <div>
-                    <label className="matcha-label">Default Target Language</label>
+                    <label className="matcha-label">{t("settings.defaultTargetLanguage")}</label>
                     <select
                       value={settings.preferredTargetLanguage}
                       onChange={(e) => handleUpdateSetting("preferredTargetLanguage", e.target.value)}
@@ -226,7 +228,7 @@ const SettingsPage: React.FC = () => {
               {/* Audio Settings */}
               <div className="matcha-card p-6">
                 <h3 className="text-lg font-semibold mb-4" style={{ color: "var(--text-primary)" }}>
-                  Audio Settings
+                  {t("settings.audioSettings")}
                 </h3>
                 <div className="space-y-4">
                   <label className="flex items-center gap-3 cursor-pointer">
@@ -237,11 +239,11 @@ const SettingsPage: React.FC = () => {
                       className="w-5 h-5 rounded"
                       style={{ accentColor: "var(--matcha-600)" }}
                     />
-                    <span style={{ color: "var(--text-primary)" }}>Auto-play translations</span>
+                    <span style={{ color: "var(--text-primary)" }}>{t("settings.autoPlayTranslations")}</span>
                   </label>
 
                   <div>
-                    <label className="matcha-label">Voice Speed</label>
+                    <label className="matcha-label">{t("settings.voiceSpeed")}</label>
                     <input
                       type="range"
                       min="0.5"
@@ -257,15 +259,15 @@ const SettingsPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="matcha-label">Voice Gender</label>
+                    <label className="matcha-label">{t("settings.voiceGender")}</label>
                     <select
                       value={settings.voiceGender}
                       onChange={(e) => handleUpdateSetting("voiceGender", e.target.value)}
                       className="matcha-select max-w-xs"
                     >
-                      <option value="neutral">Neutral</option>
-                      <option value="male">Male</option>
-                      <option value="female">Female</option>
+                      <option value="neutral">{t("settings.neutral")}</option>
+                      <option value="male">{t("settings.male")}</option>
+                      <option value="female">{t("settings.female")}</option>
                     </select>
                   </div>
                 </div>
@@ -274,32 +276,32 @@ const SettingsPage: React.FC = () => {
               {/* UI Preferences */}
               <div className="matcha-card p-6">
                 <h3 className="text-lg font-semibold mb-4" style={{ color: "var(--text-primary)" }}>
-                  Display Settings
+                  {t("settings.displaySettings")}
                 </h3>
                 <div className="space-y-4">
                   <div>
-                    <label className="matcha-label">Theme</label>
+                    <label className="matcha-label">{t("settings.themeLabel")}</label>
                     <select
                       value={settings.theme}
                       onChange={(e) => handleUpdateSetting("theme", e.target.value)}
                       className="matcha-select max-w-xs"
                     >
-                      <option value="system">System</option>
-                      <option value="light">Light</option>
-                      <option value="dark">Dark</option>
+                      <option value="system">{t("settings.system")}</option>
+                      <option value="light">{t("settings.light")}</option>
+                      <option value="dark">{t("settings.dark")}</option>
                     </select>
                   </div>
 
                   <div>
-                    <label className="matcha-label">Font Size</label>
+                    <label className="matcha-label">{t("settings.fontSize")}</label>
                     <select
                       value={settings.fontSize}
                       onChange={(e) => handleUpdateSetting("fontSize", e.target.value)}
                       className="matcha-select max-w-xs"
                     >
-                      <option value="small">Small</option>
-                      <option value="medium">Medium</option>
-                      <option value="large">Large</option>
+                      <option value="small">{t("settings.small")}</option>
+                      <option value="medium">{t("settings.medium")}</option>
+                      <option value="large">{t("settings.large")}</option>
                     </select>
                   </div>
 
@@ -311,7 +313,7 @@ const SettingsPage: React.FC = () => {
                       className="w-5 h-5 rounded"
                       style={{ accentColor: "var(--matcha-600)" }}
                     />
-                    <span style={{ color: "var(--text-primary)" }}>Show timestamps in transcripts</span>
+                    <span style={{ color: "var(--text-primary)" }}>{t("settings.showTimestamps")}</span>
                   </label>
                 </div>
               </div>
@@ -319,7 +321,7 @@ const SettingsPage: React.FC = () => {
               {/* Notifications */}
               <div className="matcha-card p-6">
                 <h3 className="text-lg font-semibold mb-4" style={{ color: "var(--text-primary)" }}>
-                  Notifications
+                  {t("notifications.title")}
                 </h3>
                 <div className="space-y-4">
                   <label className="flex items-center gap-3 cursor-pointer">
@@ -330,7 +332,7 @@ const SettingsPage: React.FC = () => {
                       className="w-5 h-5 rounded"
                       style={{ accentColor: "var(--matcha-600)" }}
                     />
-                    <span style={{ color: "var(--text-primary)" }}>Email notifications</span>
+                    <span style={{ color: "var(--text-primary)" }}>{t("settings.emailNotifications")}</span>
                   </label>
 
                   <label className="flex items-center gap-3 cursor-pointer">
@@ -341,7 +343,7 @@ const SettingsPage: React.FC = () => {
                       className="w-5 h-5 rounded"
                       style={{ accentColor: "var(--matcha-600)" }}
                     />
-                    <span style={{ color: "var(--text-primary)" }}>Session reminders</span>
+                    <span style={{ color: "var(--text-primary)" }}>{t("settings.sessionReminders")}</span>
                   </label>
                 </div>
               </div>
@@ -354,10 +356,10 @@ const SettingsPage: React.FC = () => {
               {/* Spoken Languages */}
               <div className="matcha-card p-6">
                 <h3 className="text-lg font-semibold mb-2" style={{ color: "var(--text-primary)" }}>
-                  Languages You Speak
+                  {t("settings.languagesYouSpeak")}
                 </h3>
                 <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>
-                  Select the languages you can speak or understand. This helps others find you.
+                  {t("settings.languagesDescription")}
                 </p>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   {SUPPORTED_LANGUAGES.map((lang) => {
@@ -384,7 +386,7 @@ const SettingsPage: React.FC = () => {
               {/* Discoverability */}
               <div className="matcha-card p-6">
                 <h3 className="text-lg font-semibold mb-4" style={{ color: "var(--text-primary)" }}>
-                  Privacy
+                  {t("settings.privacy")}
                 </h3>
                 <label className="flex items-start gap-4 cursor-pointer">
                   <div className="pt-0.5">
@@ -398,11 +400,10 @@ const SettingsPage: React.FC = () => {
                   </div>
                   <div>
                     <span className="font-medium block" style={{ color: "var(--text-primary)" }}>
-                      Show me in user directory
+                      {t("settings.showInDirectory")}
                     </span>
                     <span className="text-sm" style={{ color: "var(--text-muted)" }}>
-                      When enabled, other users can find you by searching or browsing the directory.
-                      Turn this off if you only want to connect with people who know your email.
+                      {t("settings.directoryDescription")}
                     </span>
                   </div>
                 </label>
@@ -415,11 +416,11 @@ const SettingsPage: React.FC = () => {
                   disabled={isSaving}
                   className="matcha-btn matcha-btn-primary py-2 px-6"
                 >
-                  {isSaving ? "Saving..." : "Save Changes"}
+                  {isSaving ? t("settings.saving") : t("settings.saveChanges")}
                 </button>
                 {saveSuccess && (
                   <span className="text-sm" style={{ color: "var(--matcha-600)" }}>
-                    Changes saved!
+                    {t("settings.changesSaved")}
                   </span>
                 )}
               </div>
@@ -431,7 +432,7 @@ const SettingsPage: React.FC = () => {
             <div className="space-y-6">
               <div className="matcha-card p-6">
                 <h3 className="text-lg font-semibold mb-4" style={{ color: "var(--text-primary)" }}>
-                  Current Plan
+                  {t("settings.currentPlan")}
                 </h3>
                 <div
                   className="p-4 rounded-xl mb-6"
@@ -443,14 +444,14 @@ const SettingsPage: React.FC = () => {
                         className="text-xl font-bold capitalize"
                         style={{ color: "var(--text-primary)" }}
                       >
-                        {userTier || "Free"}
+                        {userTier || t("pricing.free")}
                       </h4>
                       <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
                         {subscription?.usage.minutesUsed ?? 0} /{" "}
                         {subscription?.limits.minutesPerMonth === Infinity
-                          ? "Unlimited"
+                          ? t("settings.unlimited")
                           : subscription?.limits.minutesPerMonth}{" "}
-                        minutes used
+                        {t("settings.minutesUsed")}
                       </p>
                     </div>
                     <span
@@ -462,7 +463,7 @@ const SettingsPage: React.FC = () => {
                         : userTier === "pro"
                         ? "$19"
                         : "$99"}
-                      <span className="text-sm font-normal">/mo</span>
+                      <span className="text-sm font-normal">{t("pricing.perMonth")}</span>
                     </span>
                   </div>
                 </div>
@@ -473,7 +474,7 @@ const SettingsPage: React.FC = () => {
                       href="/pricing"
                       className="matcha-btn matcha-btn-primary py-2 px-6 inline-block"
                     >
-                      Upgrade Plan
+                      {t("menu.upgradePlan")}
                     </a>
                   )}
 
@@ -482,7 +483,7 @@ const SettingsPage: React.FC = () => {
                       onClick={handleDowngrade}
                       className="matcha-btn matcha-btn-secondary py-2 px-6"
                     >
-                      Downgrade to Free
+                      {t("settings.downgradeToFree")}
                     </button>
                   )}
                 </div>
@@ -491,7 +492,7 @@ const SettingsPage: React.FC = () => {
               {/* Usage Stats */}
               <div className="matcha-card p-6">
                 <h3 className="text-lg font-semibold mb-4" style={{ color: "var(--text-primary)" }}>
-                  This Month's Usage
+                  {t("settings.thisMonthUsage")}
                 </h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="p-4 rounded-xl" style={{ background: "var(--bg-elevated)" }}>
@@ -499,7 +500,7 @@ const SettingsPage: React.FC = () => {
                       {subscription?.usage.minutesUsed ?? 0}
                     </p>
                     <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-                      Minutes used
+                      {t("settings.minutesUsed")}
                     </p>
                   </div>
                   <div className="p-4 rounded-xl" style={{ background: "var(--bg-elevated)" }}>
@@ -507,7 +508,7 @@ const SettingsPage: React.FC = () => {
                       {subscription?.usage.minutesRemaining ?? 0}
                     </p>
                     <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-                      Minutes remaining
+                      {t("settings.minutesRemaining")}
                     </p>
                   </div>
                   <div className="p-4 rounded-xl" style={{ background: "var(--bg-elevated)" }}>
@@ -515,7 +516,7 @@ const SettingsPage: React.FC = () => {
                       {subscription?.usage.percentUsed ?? 0}%
                     </p>
                     <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-                      Quota used
+                      {t("settings.quotaUsed")}
                     </p>
                   </div>
                   <div className="p-4 rounded-xl" style={{ background: "var(--bg-elevated)" }}>
@@ -523,7 +524,7 @@ const SettingsPage: React.FC = () => {
                       {subscription?.limits.maxParticipants ?? 2}
                     </p>
                     <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-                      Max participants
+                      {t("settings.maxParticipants")}
                     </p>
                   </div>
                 </div>
