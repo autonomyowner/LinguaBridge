@@ -10,6 +10,7 @@ export const sendText = mutation({
   args: {
     friendId: v.id("users"),
     content: v.string(),
+    translatedContent: v.optional(v.string()),
     userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -35,6 +36,7 @@ export const sendText = mutation({
       receiverId: args.friendId,
       type: "text",
       content: args.content,
+      ...(args.translatedContent ? { translatedContent: args.translatedContent } : {}),
       isRead: false,
       createdAt: now,
     });

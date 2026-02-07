@@ -74,12 +74,9 @@ const MessagesPage: React.FC = () => {
   const handleSendText = async (content: string) => {
     if (!selectedFriendId) return;
 
-    // Use translation action if translation is enabled
-    if (conversationSettings?.translationEnabled) {
-      await sendTextWithTranslation({ friendId: selectedFriendId, content });
-    } else {
-      await sendText({ friendId: selectedFriendId, content, userEmail: user?.email });
-    }
+    // Always use translation action - it auto-translates if recipient
+    // has a preferred chat language set, otherwise sends as-is
+    await sendTextWithTranslation({ friendId: selectedFriendId, content });
   };
 
   const handleToggleTranslation = async () => {

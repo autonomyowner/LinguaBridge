@@ -171,8 +171,8 @@ function detectLang(text: string): string {
 }
 
 /**
- * Send a text message with optional translation
- * This action handles the translation logic and then saves the message
+ * Send a text message with automatic translation
+ * Stores original content + translated version for the receiver
  */
 export const sendTextWithTranslation = action({
   args: {
@@ -184,35 +184,36 @@ export const sendTextWithTranslation = action({
     messageId: v.id("messages"),
   }),
   handler: async (ctx, { friendId, content }): Promise<{ success: boolean; messageId: any }> => {
-    // Get conversation settings to check if translation is enabled
-    const settings = await ctx.runQuery(api.messages.queries.getConversationSettings, {
+    let translatedContent: string | undefined = undefined;
+
+    // Get the recipient's preferred chat language
+    const recipientLang = await ctx.runQuery(api.messages.queries.getRecipientLanguage, {
       friendId,
     });
 
-    let finalContent = content;
+    if (recipientLang) {
+      // Detect the source language from the message
+      const sourceLang = detectLang(content);
 
-    if (settings.translationEnabled) {
-      // Get the recipient's preferred language
-      const recipientLang = await ctx.runQuery(api.messages.queries.getRecipientLanguage, {
-        friendId,
-      });
-
-      if (recipientLang) {
-        // Detect the source language from the message
-        const sourceLang = detectLang(content);
-
-        // Translate if languages are different
-        if (sourceLang !== recipientLang) {
-          finalContent = await performTranslation(content, sourceLang, recipientLang);
+      // Translate if languages are different
+      if (sourceLang !== recipientLang) {
+        translatedContent = await performTranslation(content, sourceLang, recipientLang);
+        // If translation failed (returned same text), don't store it
+        if (translatedContent === content) {
+          translatedContent = undefined;
         }
       }
     }
 
-    // Send the message (translated or original)
-    const result: { success: boolean; messageId: any } = await ctx.runMutation(api.messages.mutations.sendText, {
-      friendId,
-      content: finalContent,
-    });
+    // Send message with both original and translated content
+    const result: { success: boolean; messageId: any } = await ctx.runMutation(
+      api.messages.mutations.sendText,
+      {
+        friendId,
+        content,
+        translatedContent,
+      }
+    );
 
     return result;
   }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
 import { useAuth } from "../providers/AuthContext";
@@ -28,8 +28,8 @@ const FloatingChat: React.FC = () => {
     isAuthenticated ? { userEmail: user?.email } : "skip"
   );
 
-  // Mutations
-  const sendText = useMutation(api.messages.mutations.sendText);
+  // Mutations & Actions
+  const sendTextWithTranslation = useAction(api.messages.actions.sendTextWithTranslation);
   const sendVoice = useMutation(api.messages.mutations.sendVoice);
   const markAsRead = useMutation(api.messages.mutations.markAsRead);
   const generateUploadUrl = useMutation(api.messages.mutations.generateUploadUrl);
@@ -76,7 +76,7 @@ const FloatingChat: React.FC = () => {
 
   const handleSendText = async (content: string) => {
     if (!selectedFriendId) return;
-    await sendText({ friendId: selectedFriendId, content });
+    await sendTextWithTranslation({ friendId: selectedFriendId, content });
   };
 
   const handleSendVoice = async (blob: Blob, duration: number) => {

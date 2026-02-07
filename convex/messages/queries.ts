@@ -202,11 +202,16 @@ export const getConversation = query({
       .sort((a, b) => a.createdAt - b.createdAt)
       .slice(-limit);
 
-    // Add isFromMe flag
-    const messages = allMessages.map((msg) => ({
-      ...msg,
-      isFromMe: msg.senderId === user._id,
-    }));
+    // Add isFromMe flag and pick correct content for each user
+    const messages = allMessages.map((msg) => {
+      const isFromMe = msg.senderId === user._id;
+      return {
+        ...msg,
+        isFromMe,
+        // Receiver sees translatedContent if available, sender always sees original
+        content: !isFromMe && msg.translatedContent ? msg.translatedContent : msg.content,
+      };
+    });
 
     // Get friend details
     const friend = await ctx.db.get(args.friendId);

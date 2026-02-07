@@ -293,6 +293,7 @@ export default defineSchema({
     receiverId: v.id("users"),
     type: v.union(v.literal("text"), v.literal("voice")),
     content: v.string(), // Text content or storage ID for voice
+    translatedContent: v.optional(v.string()), // Auto-translated version for receiver
     duration: v.optional(v.number()), // Duration in seconds for voice messages
     isRead: v.boolean(),
     createdAt: v.number(),
