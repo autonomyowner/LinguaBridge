@@ -1,12 +1,12 @@
 import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
+import { authClient, saveSession } from "../../lib/auth-client";
 
 interface SignInFormProps {
   onSuccess?: () => void;
 }
 
 export function SignInForm({ onSuccess }: SignInFormProps) {
-  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -24,11 +24,42 @@ export function SignInForm({ onSuccess }: SignInFormProps) {
       return;
     }
 
-    // Navigate directly to dashboard (no backend auth)
-    if (onSuccess) {
-      onSuccess();
-    } else {
-      navigate("/dashboard", { replace: true });
+    try {
+      const result = await authClient.signIn.email({
+        email,
+        password,
+      });
+
+      if (result.error) {
+        setError(result.error.message || "Invalid email or password");
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Save session to localStorage for cross-origin persistence
+      if (result.data?.user) {
+        saveSession({
+          user: {
+            id: result.data.user.id,
+            email: result.data.user.email,
+            name: result.data.user.name,
+          },
+        });
+      }
+
+      // Wait a moment for auth token to sync with Convex
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Redirect on success - use window.location for full page refresh
+      if (onSuccess) {
+        onSuccess();
+      } else {
+        window.location.href = "/dashboard";
+      }
+    } catch (err) {
+      console.error("Sign in error:", err);
+      setError("Invalid email or password. Please try again.");
+      setIsSubmitting(false);
     }
   };
 
