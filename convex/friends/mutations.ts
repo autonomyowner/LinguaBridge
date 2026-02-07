@@ -9,9 +9,10 @@ import { createNotification } from "../notifications/mutations";
 export const sendRequest = mutation({
   args: {
     userId: v.id("users"),
+    userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const currentUser = await getCurrentUser(ctx);
+    const currentUser = await getCurrentUser(ctx, args.userEmail);
 
     // Can't friend yourself
     if (args.userId === currentUser._id) {
@@ -50,7 +51,7 @@ export const sendRequest = mutation({
       await createNotification(ctx, {
         userId: args.userId,
         type: "friend_request",
-        referenceId: existingAsRequester._id,
+        referenceId: existingAsRequester._id as string,
         title: "New friend request",
         body: `${currentUser.name || "Someone"} wants to be your friend`,
       });
@@ -78,7 +79,7 @@ export const sendRequest = mutation({
         await createNotification(ctx, {
           userId: args.userId,
           type: "friend_accepted",
-          referenceId: existingAsAddressee._id,
+          referenceId: existingAsAddressee._id as string,
           title: "Friend request accepted",
           body: `${currentUser.name || "Someone"} accepted your friend request`,
         });
@@ -87,6 +88,29 @@ export const sendRequest = mutation({
       }
       if (existingAsAddressee.status === "accepted") {
         throw new Error("You are already friends");
+      }
+      // If rejected, delete old record and create a new one with correct direction
+      if (existingAsAddressee.status === "rejected") {
+        await ctx.db.delete(existingAsAddressee._id);
+
+        const now = Date.now();
+        const friendshipId = await ctx.db.insert("friendships", {
+          requesterId: currentUser._id,
+          addresseeId: args.userId,
+          status: "pending",
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        await createNotification(ctx, {
+          userId: args.userId,
+          type: "friend_request",
+          referenceId: friendshipId as string,
+          title: "New friend request",
+          body: `${currentUser.name || "Someone"} wants to be your friend`,
+        });
+
+        return { success: true, friendshipId };
       }
     }
 
@@ -104,7 +128,7 @@ export const sendRequest = mutation({
     await createNotification(ctx, {
       userId: args.userId,
       type: "friend_request",
-      referenceId: friendshipId,
+      referenceId: friendshipId as string,
       title: "New friend request",
       body: `${currentUser.name || "Someone"} wants to be your friend`,
     });
@@ -119,9 +143,10 @@ export const sendRequest = mutation({
 export const acceptRequest = mutation({
   args: {
     friendshipId: v.id("friendships"),
+    userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const currentUser = await getCurrentUser(ctx);
+    const currentUser = await getCurrentUser(ctx, args.userEmail);
 
     const friendship = await ctx.db.get(args.friendshipId);
     if (!friendship) {
@@ -147,7 +172,7 @@ export const acceptRequest = mutation({
     await createNotification(ctx, {
       userId: friendship.requesterId,
       type: "friend_accepted",
-      referenceId: args.friendshipId,
+      referenceId: args.friendshipId as string,
       title: "Friend request accepted",
       body: `${currentUser.name || "Someone"} accepted your friend request`,
     });
@@ -162,9 +187,10 @@ export const acceptRequest = mutation({
 export const rejectRequest = mutation({
   args: {
     friendshipId: v.id("friendships"),
+    userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const currentUser = await getCurrentUser(ctx);
+    const currentUser = await getCurrentUser(ctx, args.userEmail);
 
     const friendship = await ctx.db.get(args.friendshipId);
     if (!friendship) {
@@ -198,9 +224,10 @@ export const rejectRequest = mutation({
 export const cancelRequest = mutation({
   args: {
     friendshipId: v.id("friendships"),
+    userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const currentUser = await getCurrentUser(ctx);
+    const currentUser = await getCurrentUser(ctx, args.userEmail);
 
     const friendship = await ctx.db.get(args.friendshipId);
     if (!friendship) {
@@ -229,9 +256,10 @@ export const cancelRequest = mutation({
 export const unfriend = mutation({
   args: {
     userId: v.id("users"),
+    userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const currentUser = await getCurrentUser(ctx);
+    const currentUser = await getCurrentUser(ctx, args.userEmail);
 
     // Find the friendship in either direction
     const asRequester = await ctx.db
@@ -260,35 +288,5 @@ export const unfriend = mutation({
     // No notification for unfriend (silent)
 
     return { success: true };
-  },
-});
-
-/**
- * Check if two users are friends
- */
-export const areFriends = mutation({
-  args: {
-    userId: v.id("users"),
-  },
-  handler: async (ctx, args) => {
-    const currentUser = await getCurrentUser(ctx);
-
-    const asRequester = await ctx.db
-      .query("friendships")
-      .withIndex("by_pair", (q) =>
-        q.eq("requesterId", currentUser._id).eq("addresseeId", args.userId)
-      )
-      .first();
-
-    if (asRequester?.status === "accepted") return true;
-
-    const asAddressee = await ctx.db
-      .query("friendships")
-      .withIndex("by_pair", (q) =>
-        q.eq("requesterId", args.userId).eq("addresseeId", currentUser._id)
-      )
-      .first();
-
-    return asAddressee?.status === "accepted";
   },
 });

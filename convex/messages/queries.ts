@@ -1,16 +1,35 @@
-import { query } from "../_generated/server";
+import { query, QueryCtx } from "../_generated/server";
 import { v } from "convex/values";
 import { getCurrentUserOrNull, getCurrentUser } from "../lib/utils";
 import { Id } from "../_generated/dataModel";
+
+/**
+ * Get current user with email fallback when Convex auth token isn't synced
+ */
+async function getUserWithFallback(ctx: QueryCtx, email?: string) {
+  const user = await getCurrentUserOrNull(ctx);
+  if (user) return user;
+
+  if (email) {
+    return await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", email))
+      .first();
+  }
+
+  return null;
+}
 
 /**
  * List all conversations with last message preview
  * Also includes friends without messages (new friends)
  */
 export const listConversations = query({
-  args: {},
-  handler: async (ctx) => {
-    const user = await getCurrentUserOrNull(ctx);
+  args: {
+    userEmail: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getUserWithFallback(ctx, args.userEmail);
     if (!user) return [];
 
     // Get all messages involving the current user
@@ -154,9 +173,10 @@ export const getConversation = query({
     friendId: v.id("users"),
     cursor: v.optional(v.number()),
     limit: v.optional(v.number()),
+    userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUserOrNull(ctx);
+    const user = await getUserWithFallback(ctx, args.userEmail);
     if (!user) return { messages: [], friend: null, nextCursor: null };
 
     const limit = args.limit ?? 50;
@@ -210,9 +230,11 @@ export const getConversation = query({
  * Get total unread message count
  */
 export const getUnreadCount = query({
-  args: {},
-  handler: async (ctx) => {
-    const user = await getCurrentUserOrNull(ctx);
+  args: {
+    userEmail: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getUserWithFallback(ctx, args.userEmail);
     if (!user) return 0;
 
     const unreadMessages = await ctx.db

@@ -21,7 +21,7 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
   const handleClick = async () => {
     // Mark as read
     if (!notification.isRead) {
-      await markAsRead({ notificationId: notification._id });
+      await markAsRead({ notificationId: notification._id, userEmail: user?.email });
     }
 
     // Navigate based on type

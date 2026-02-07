@@ -12,11 +12,11 @@ interface NotificationDropdownProps {
 const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ onClose }) => {
   const { user } = useAuth();
   const { t } = useLanguage();
-  const notifications = useQuery(api.notifications.queries.list, { limit: 10 });
+  const notifications = useQuery(api.notifications.queries.list, { limit: 10, userEmail: user?.email });
   const markAllAsRead = useMutation(api.notifications.mutations.markAllAsRead);
 
   const handleMarkAllAsRead = async () => {
-    await markAllAsRead({});
+    await markAllAsRead({ userEmail: user?.email });
   };
 
   const unreadCount = notifications?.filter((n) => !n.isRead).length ?? 0;

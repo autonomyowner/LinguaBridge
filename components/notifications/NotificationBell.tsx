@@ -12,7 +12,7 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ className }) => {
   const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const unreadCount = useQuery(api.notifications.queries.getUnreadCount) ?? 0;
+  const unreadCount = useQuery(api.notifications.queries.getUnreadCount, { userEmail: user?.email }) ?? 0;
 
   // Close dropdown when clicking outside
   useEffect(() => {

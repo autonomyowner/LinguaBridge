@@ -31,11 +31,11 @@ const MessagesPage: React.FC = () => {
     }
   }, [user?.email, userEnsured, ensureUser]);
 
-  // Data
-  const conversations = useQuery(api.messages.queries.listConversations);
+  // Data - pass email as fallback when Convex auth token isn't synced
+  const conversations = useQuery(api.messages.queries.listConversations, { userEmail: user?.email });
   const conversation = useQuery(
     api.messages.queries.getConversation,
-    selectedFriendId ? { friendId: selectedFriendId } : "skip"
+    selectedFriendId ? { friendId: selectedFriendId, userEmail: user?.email } : "skip"
   );
   const conversationSettings = useQuery(
     api.messages.queries.getConversationSettings,
@@ -63,7 +63,7 @@ const MessagesPage: React.FC = () => {
   // Mark messages as read when conversation opens
   useEffect(() => {
     if (selectedFriendId && conversation?.messages.some((m) => !m.isFromMe && !m.isRead)) {
-      markAsRead({ friendId: selectedFriendId });
+      markAsRead({ friendId: selectedFriendId, userEmail: user?.email });
     }
   }, [selectedFriendId, conversation, markAsRead]);
 
@@ -78,7 +78,7 @@ const MessagesPage: React.FC = () => {
     if (conversationSettings?.translationEnabled) {
       await sendTextWithTranslation({ friendId: selectedFriendId, content });
     } else {
-      await sendText({ friendId: selectedFriendId, content });
+      await sendText({ friendId: selectedFriendId, content, userEmail: user?.email });
     }
   };
 
@@ -99,6 +99,7 @@ const MessagesPage: React.FC = () => {
       await setTranslationEnabled({
         friendId: selectedFriendId,
         enabled: !conversationSettings?.translationEnabled,
+        userEmail: user?.email,
       });
     } catch (error) {
       console.error("Failed to toggle translation:", error);

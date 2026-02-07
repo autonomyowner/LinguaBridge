@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { Doc } from "../../convex/_generated/dataModel";
 import VoicePlayer from "./VoicePlayer";
+import { useLanguage } from "../../providers/LanguageContext";
 
 interface Message extends Doc<"messages"> {
   isFromMe: boolean;
@@ -16,6 +17,7 @@ const MessageThread: React.FC<MessageThreadProps> = ({
   isLoading,
 }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const { t } = useLanguage();
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -34,10 +36,10 @@ const MessageThread: React.FC<MessageThreadProps> = ({
     yesterday.setDate(yesterday.getDate() - 1);
 
     if (date.toDateString() === today.toDateString()) {
-      return "Today";
+      return t("time.today");
     }
     if (date.toDateString() === yesterday.toDateString()) {
-      return "Yesterday";
+      return t("time.yesterday");
     }
     return date.toLocaleDateString([], {
       weekday: "long",
@@ -98,9 +100,9 @@ const MessageThread: React.FC<MessageThreadProps> = ({
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
           </div>
-          <p style={{ color: "var(--text-muted)" }}>No messages yet</p>
+          <p style={{ color: "var(--text-muted)" }}>{t("messages.noMessagesYet")}</p>
           <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
-            Send a message to start the conversation
+            {t("messages.sendToStart")}
           </p>
         </div>
       </div>

@@ -30,10 +30,10 @@ const FriendsPage: React.FC = () => {
     }
   }, [user?.email, userEnsured, ensureUser]);
 
-  // Friends data
-  const friends = useQuery(api.friends.queries.list);
-  const pendingRequests = useQuery(api.friends.queries.listPending);
-  const sentRequests = useQuery(api.friends.queries.listSent);
+  // Friends data - pass email as fallback when Convex auth token isn't synced
+  const friends = useQuery(api.friends.queries.list, { userEmail: user?.email });
+  const pendingRequests = useQuery(api.friends.queries.listPending, { userEmail: user?.email });
+  const sentRequests = useQuery(api.friends.queries.listSent, { userEmail: user?.email });
 
   // Search/browse data - use authenticated queries
   const searchResults = useQuery(

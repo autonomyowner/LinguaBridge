@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 import { useLanguage } from "../../providers/LanguageContext";
+import { useAuth } from "../../providers/AuthContext";
 
 interface FriendCardProps {
   friend: {
@@ -25,6 +26,7 @@ const FriendCard: React.FC<FriendCardProps> = ({
 }) => {
   const navigate = useNavigate();
   const { t } = useLanguage();
+  const { user } = useAuth();
   const unfriend = useMutation(api.friends.mutations.unfriend);
   const [isUnfriending, setIsUnfriending] = React.useState(false);
 
@@ -33,7 +35,7 @@ const FriendCard: React.FC<FriendCardProps> = ({
 
     setIsUnfriending(true);
     try {
-      await unfriend({ userId: friend._id });
+      await unfriend({ userId: friend._id, userEmail: user?.email });
     } catch (error) {
       console.error("Failed to unfriend:", error);
     } finally {

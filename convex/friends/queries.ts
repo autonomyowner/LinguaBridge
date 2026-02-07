@@ -1,15 +1,35 @@
-import { query } from "../_generated/server";
+import { query, QueryCtx } from "../_generated/server";
 import { v } from "convex/values";
 import { getCurrentUserOrNull } from "../lib/utils";
 import { Doc, Id } from "../_generated/dataModel";
 
 /**
+ * Get current user with email fallback when Convex auth token isn't synced
+ */
+async function getUserWithFallback(ctx: QueryCtx, email?: string) {
+  const user = await getCurrentUserOrNull(ctx);
+  if (user) return user;
+
+  // Fallback: find by email when auth token isn't synced
+  if (email) {
+    return await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", email))
+      .first();
+  }
+
+  return null;
+}
+
+/**
  * Get list of accepted friends with their details
  */
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
-    const user = await getCurrentUserOrNull(ctx);
+  args: {
+    userEmail: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getUserWithFallback(ctx, args.userEmail);
     if (!user) return [];
 
     // Get friendships where user is requester
@@ -62,9 +82,11 @@ export const list = query({
  * Get pending friend requests received by the current user
  */
 export const listPending = query({
-  args: {},
-  handler: async (ctx) => {
-    const user = await getCurrentUserOrNull(ctx);
+  args: {
+    userEmail: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getUserWithFallback(ctx, args.userEmail);
     if (!user) return [];
 
     const pendingRequests = await ctx.db
@@ -99,9 +121,11 @@ export const listPending = query({
  * Get friend requests sent by the current user
  */
 export const listSent = query({
-  args: {},
-  handler: async (ctx) => {
-    const user = await getCurrentUserOrNull(ctx);
+  args: {
+    userEmail: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getUserWithFallback(ctx, args.userEmail);
     if (!user) return [];
 
     const sentRequests = await ctx.db
@@ -258,6 +282,37 @@ export const getFriendship = query({
     if (!currentUser) return null;
 
     return await getFriendshipStatus(ctx, currentUser._id, args.userId);
+  },
+});
+
+/**
+ * Check if two users are friends
+ */
+export const areFriends = query({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const currentUser = await getCurrentUserOrNull(ctx);
+    if (!currentUser) return false;
+
+    const asRequester = await ctx.db
+      .query("friendships")
+      .withIndex("by_pair", (q) =>
+        q.eq("requesterId", currentUser._id).eq("addresseeId", args.userId)
+      )
+      .first();
+
+    if (asRequester?.status === "accepted") return true;
+
+    const asAddressee = await ctx.db
+      .query("friendships")
+      .withIndex("by_pair", (q) =>
+        q.eq("requesterId", args.userId).eq("addresseeId", currentUser._id)
+      )
+      .first();
+
+    return asAddressee?.status === "accepted";
   },
 });
 

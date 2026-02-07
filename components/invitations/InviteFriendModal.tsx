@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
+import { useAuth } from "../../providers/AuthContext";
 
 interface InviteFriendModalProps {
   roomId: Id<"rooms">;
@@ -16,7 +17,8 @@ const InviteFriendModal: React.FC<InviteFriendModalProps> = ({
   isOpen,
   onClose,
 }) => {
-  const friends = useQuery(api.friends.queries.list);
+  const { user } = useAuth();
+  const friends = useQuery(api.friends.queries.list, { userEmail: user?.email });
   const sendInvite = useMutation(api.invitations.mutations.sendDirect);
   const [sendingTo, setSendingTo] = useState<string | null>(null);
   const [sentTo, setSentTo] = useState<Set<string>>(new Set());

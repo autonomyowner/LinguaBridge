@@ -1,6 +1,23 @@
-import { query } from "../_generated/server";
+import { query, QueryCtx } from "../_generated/server";
 import { v } from "convex/values";
 import { getCurrentUserOrNull } from "../lib/utils";
+
+/**
+ * Get current user with email fallback when Convex auth token isn't synced
+ */
+async function getUserWithFallback(ctx: QueryCtx, email?: string) {
+  const user = await getCurrentUserOrNull(ctx);
+  if (user) return user;
+
+  if (email) {
+    return await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", email))
+      .first();
+  }
+
+  return null;
+}
 
 /**
  * List notifications for the current user
@@ -9,9 +26,10 @@ import { getCurrentUserOrNull } from "../lib/utils";
 export const list = query({
   args: {
     limit: v.optional(v.number()),
+    userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUserOrNull(ctx);
+    const user = await getUserWithFallback(ctx, args.userEmail);
     if (!user) return [];
 
     const limit = args.limit ?? 20;
@@ -30,9 +48,11 @@ export const list = query({
  * Get count of unread notifications
  */
 export const getUnreadCount = query({
-  args: {},
-  handler: async (ctx) => {
-    const user = await getCurrentUserOrNull(ctx);
+  args: {
+    userEmail: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getUserWithFallback(ctx, args.userEmail);
     if (!user) return 0;
 
     const unreadNotifications = await ctx.db

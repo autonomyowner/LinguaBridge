@@ -128,12 +128,14 @@ export const updateProfile = mutation({
   args: {
     name: v.optional(v.string()),
     imageUrl: v.optional(v.string()),
+    userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
+    const { userEmail, ...profileArgs } = args;
+    const user = await getCurrentUser(ctx, userEmail);
 
     await ctx.db.patch(user._id, {
-      ...args,
+      ...profileArgs,
       updatedAt: Date.now(),
     });
 
@@ -148,9 +150,10 @@ export const updateSocialSettings = mutation({
   args: {
     spokenLanguages: v.optional(v.array(v.string())),
     isDiscoverable: v.optional(v.boolean()),
+    userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUser(ctx, args.userEmail);
 
     const updates: Record<string, any> = { updatedAt: Date.now() };
 
@@ -182,35 +185,37 @@ export const updateSettings = mutation({
     showTimestamps: v.optional(v.boolean()),
     emailNotifications: v.optional(v.boolean()),
     sessionReminders: v.optional(v.boolean()),
+    userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
+    const { userEmail, ...settingsArgs } = args;
+    const user = await getCurrentUser(ctx, userEmail);
 
     const settings = await ctx.db
       .query("userSettings")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .unique();
+      .first();
 
     const now = Date.now();
 
     if (settings) {
       await ctx.db.patch(settings._id, {
-        ...args,
+        ...settingsArgs,
         updatedAt: now,
       });
     } else {
       await ctx.db.insert("userSettings", {
         userId: user._id,
-        preferredSourceLanguage: args.preferredSourceLanguage ?? "en",
-        preferredTargetLanguage: args.preferredTargetLanguage ?? "es",
-        autoPlayTranslations: args.autoPlayTranslations ?? true,
-        voiceSpeed: args.voiceSpeed ?? 1.0,
-        voiceGender: args.voiceGender ?? "neutral",
-        theme: args.theme ?? "system",
-        fontSize: args.fontSize ?? "medium",
-        showTimestamps: args.showTimestamps ?? true,
-        emailNotifications: args.emailNotifications ?? true,
-        sessionReminders: args.sessionReminders ?? true,
+        preferredSourceLanguage: settingsArgs.preferredSourceLanguage ?? "en",
+        preferredTargetLanguage: settingsArgs.preferredTargetLanguage ?? "es",
+        autoPlayTranslations: settingsArgs.autoPlayTranslations ?? true,
+        voiceSpeed: settingsArgs.voiceSpeed ?? 1.0,
+        voiceGender: settingsArgs.voiceGender ?? "neutral",
+        theme: settingsArgs.theme ?? "system",
+        fontSize: settingsArgs.fontSize ?? "medium",
+        showTimestamps: settingsArgs.showTimestamps ?? true,
+        emailNotifications: settingsArgs.emailNotifications ?? true,
+        sessionReminders: settingsArgs.sessionReminders ?? true,
         updatedAt: now,
       });
     }
@@ -365,9 +370,10 @@ export const updateSubscriptionTier = internalMutation({
 export const setPreferredChatLanguage = mutation({
   args: {
     language: v.string(), // "en" or "ar"
+    userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUser(ctx, args.userEmail);
 
     // Validate language
     if (!["en", "ar"].includes(args.language)) {
@@ -377,7 +383,7 @@ export const setPreferredChatLanguage = mutation({
     const settings = await ctx.db
       .query("userSettings")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .unique();
+      .first();
 
     const now = Date.now();
 

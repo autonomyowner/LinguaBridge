@@ -23,16 +23,19 @@ const FriendRequestCard: React.FC<FriendRequestCardProps> = ({
 }) => {
   const { user } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const acceptRequest = useMutation(api.friends.mutations.acceptRequest);
   const rejectRequest = useMutation(api.friends.mutations.rejectRequest);
   const cancelRequest = useMutation(api.friends.mutations.cancelRequest);
 
   const handleAccept = async () => {
     setIsLoading(true);
+    setError(null);
     try {
-      await acceptRequest({ friendshipId: request.friendshipId });
+      await acceptRequest({ friendshipId: request.friendshipId, userEmail: user?.email });
     } catch (error) {
       console.error("Failed to accept request:", error);
+      setError(error instanceof Error ? error.message : "Failed to accept request");
     } finally {
       setIsLoading(false);
     }
@@ -40,10 +43,12 @@ const FriendRequestCard: React.FC<FriendRequestCardProps> = ({
 
   const handleReject = async () => {
     setIsLoading(true);
+    setError(null);
     try {
-      await rejectRequest({ friendshipId: request.friendshipId });
+      await rejectRequest({ friendshipId: request.friendshipId, userEmail: user?.email });
     } catch (error) {
       console.error("Failed to reject request:", error);
+      setError(error instanceof Error ? error.message : "Failed to reject request");
     } finally {
       setIsLoading(false);
     }
@@ -51,10 +56,12 @@ const FriendRequestCard: React.FC<FriendRequestCardProps> = ({
 
   const handleCancel = async () => {
     setIsLoading(true);
+    setError(null);
     try {
-      await cancelRequest({ friendshipId: request.friendshipId });
+      await cancelRequest({ friendshipId: request.friendshipId, userEmail: user?.email });
     } catch (error) {
       console.error("Failed to cancel request:", error);
+      setError(error instanceof Error ? error.message : "Failed to cancel request");
     } finally {
       setIsLoading(false);
     }
@@ -151,6 +158,13 @@ const FriendRequestCard: React.FC<FriendRequestCardProps> = ({
             </span>
           ))}
         </div>
+      )}
+
+      {/* Error */}
+      {error && (
+        <p className="text-sm mt-3" style={{ color: "var(--terra-500)" }}>
+          {error}
+        </p>
       )}
 
       {/* Actions */}

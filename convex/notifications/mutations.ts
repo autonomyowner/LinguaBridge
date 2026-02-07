@@ -9,9 +9,10 @@ import { Id } from "../_generated/dataModel";
 export const markAsRead = mutation({
   args: {
     notificationId: v.id("notifications"),
+    userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUser(ctx, args.userEmail);
 
     const notification = await ctx.db.get(args.notificationId);
     if (!notification || notification.userId !== user._id) {
@@ -28,9 +29,11 @@ export const markAsRead = mutation({
  * Mark all notifications as read for the current user
  */
 export const markAllAsRead = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const user = await getCurrentUser(ctx);
+  args: {
+    userEmail: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUser(ctx, args.userEmail);
 
     const unreadNotifications = await ctx.db
       .query("notifications")
@@ -53,9 +56,10 @@ export const markAllAsRead = mutation({
 export const deleteNotification = mutation({
   args: {
     notificationId: v.id("notifications"),
+    userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUser(ctx, args.userEmail);
 
     const notification = await ctx.db.get(args.notificationId);
     if (!notification || notification.userId !== user._id) {

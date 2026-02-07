@@ -234,17 +234,25 @@ const Header: React.FC = () => {
                 {language === "en" ? "العربية (AR)" : "English (EN)"}
               </button>
 
-              {/* Mobile Auth */}
+              {/* Mobile Notifications + Auth */}
               <div className="pt-4 mt-2" style={{ borderTop: '1px solid var(--border-soft)' }}>
                 {isAuthenticated ? (
-                  <Link
-                    to="/settings"
-                    className="text-sm font-medium py-2 block transition-colors"
-                    style={{ color: 'var(--text-secondary)' }}
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    {t("nav.settings")}
-                  </Link>
+                  <>
+                    <div className="flex items-center justify-between py-2">
+                      <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
+                        {t("notifications.title")}
+                      </span>
+                      <NotificationBell />
+                    </div>
+                    <Link
+                      to="/settings"
+                      className="text-sm font-medium py-2 block transition-colors"
+                      style={{ color: 'var(--text-secondary)' }}
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      {t("nav.settings")}
+                    </Link>
+                  </>
                 ) : (
                   <div className="flex flex-col gap-3">
                     <Link

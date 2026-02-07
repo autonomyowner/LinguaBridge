@@ -10,9 +10,10 @@ export const sendText = mutation({
   args: {
     friendId: v.id("users"),
     content: v.string(),
+    userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const currentUser = await getCurrentUser(ctx);
+    const currentUser = await getCurrentUser(ctx, args.userEmail);
 
     if (args.content.trim().length === 0) {
       throw new Error("Message cannot be empty");
@@ -42,7 +43,7 @@ export const sendText = mutation({
     await createNotification(ctx, {
       userId: args.friendId,
       type: "message",
-      referenceId: messageId,
+      referenceId: messageId as string,
       title: "New message",
       body: `${currentUser.name || "Someone"}: ${args.content.slice(0, 50)}${args.content.length > 50 ? "..." : ""}`,
     });
@@ -59,9 +60,10 @@ export const sendVoice = mutation({
     friendId: v.id("users"),
     storageId: v.string(),
     duration: v.number(),
+    userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const currentUser = await getCurrentUser(ctx);
+    const currentUser = await getCurrentUser(ctx, args.userEmail);
 
     if (args.duration <= 0) {
       throw new Error("Invalid voice message duration");
@@ -92,7 +94,7 @@ export const sendVoice = mutation({
     await createNotification(ctx, {
       userId: args.friendId,
       type: "message",
-      referenceId: messageId,
+      referenceId: messageId as string,
       title: "New voice message",
       body: `${currentUser.name || "Someone"} sent a voice message (${Math.ceil(args.duration)}s)`,
     });
@@ -107,9 +109,10 @@ export const sendVoice = mutation({
 export const markAsRead = mutation({
   args: {
     friendId: v.id("users"),
+    userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const currentUser = await getCurrentUser(ctx);
+    const currentUser = await getCurrentUser(ctx, args.userEmail);
 
     // Get all unread messages from this friend
     const unreadMessages = await ctx.db
@@ -135,9 +138,10 @@ export const markAsRead = mutation({
 export const deleteMessage = mutation({
   args: {
     messageId: v.id("messages"),
+    userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const currentUser = await getCurrentUser(ctx);
+    const currentUser = await getCurrentUser(ctx, args.userEmail);
 
     const message = await ctx.db.get(args.messageId);
     if (!message) {
@@ -159,9 +163,11 @@ export const deleteMessage = mutation({
  * Generate upload URL for voice messages
  */
 export const generateUploadUrl = mutation({
-  args: {},
-  handler: async (ctx) => {
-    await getCurrentUser(ctx); // Ensure authenticated
+  args: {
+    userEmail: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await getCurrentUser(ctx, args.userEmail); // Ensure authenticated
     return await ctx.storage.generateUploadUrl();
   },
 });
@@ -172,9 +178,10 @@ export const generateUploadUrl = mutation({
 export const getVoiceUrl = mutation({
   args: {
     storageId: v.id("_storage"),
+    userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await getCurrentUser(ctx); // Ensure authenticated
+    await getCurrentUser(ctx, args.userEmail); // Ensure authenticated
     return await ctx.storage.getUrl(args.storageId);
   },
 });
@@ -211,9 +218,10 @@ export const setTranslationEnabled = mutation({
   args: {
     friendId: v.id("users"),
     enabled: v.boolean(),
+    userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const currentUser = await getCurrentUser(ctx);
+    const currentUser = await getCurrentUser(ctx, args.userEmail);
 
     // Check if settings exist
     const existingSettings = await ctx.db

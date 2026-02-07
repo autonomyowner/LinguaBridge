@@ -53,9 +53,11 @@ export const getSubscriptionDetails = query({
  * Get user's settings
  */
 export const getSettings = query({
-  args: {},
-  handler: async (ctx) => {
-    const user = await getCurrentUserOrNull(ctx);
+  args: {
+    userEmail: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUserOrNull(ctx, args.userEmail);
 
     // Return default settings if not authenticated
     const defaultSettings = {
@@ -79,7 +81,7 @@ export const getSettings = query({
     const settings = await ctx.db
       .query("userSettings")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .unique();
+      .first();
 
     if (!settings) {
       return defaultSettings;

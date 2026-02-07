@@ -9,7 +9,7 @@ import { SUPPORTED_LANGUAGES } from "../types";
 const SettingsPage: React.FC = () => {
   const { user, signOut } = useAuth();
   const { t } = useLanguage();
-  const settings = useQuery(api.users.queries.getSettings);
+  const settings = useQuery(api.users.queries.getSettings, { userEmail: user?.email });
   const subscription = useQuery(api.subscriptions.queries.getCurrent);
   const currentUser = useQuery(api.users.queries.getCurrent);
   const userTier = subscription?.tier || "free";
@@ -19,12 +19,24 @@ const SettingsPage: React.FC = () => {
   const setPreferredChatLanguage = useMutation(api.users.mutations.setPreferredChatLanguage);
   const downgradeToFree = useMutation(api.subscriptions.mutations.downgradeToFree);
 
+  // Ensure user exists in app database
+  const ensureUser = useMutation(api.debug.ensureUserByEmail);
+  const [userEnsured, setUserEnsured] = useState(false);
+
   const [name, setName] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [activeTab, setActiveTab] = useState<"profile" | "preferences" | "social" | "subscription">("profile");
   const [spokenLanguages, setSpokenLanguages] = useState<string[]>([]);
   const [isDiscoverable, setIsDiscoverable] = useState(true);
+
+  useEffect(() => {
+    if (user?.email && !userEnsured) {
+      ensureUser({ email: user.email, name: user.name })
+        .then(() => setUserEnsured(true))
+        .catch(console.error);
+    }
+  }, [user?.email, userEnsured, ensureUser]);
 
   useEffect(() => {
     if (user?.name) {
@@ -42,7 +54,7 @@ const SettingsPage: React.FC = () => {
   const handleSaveProfile = async () => {
     setIsSaving(true);
     try {
-      await updateProfile({ name });
+      await updateProfile({ name, userEmail: user?.email });
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (error) {
@@ -54,7 +66,7 @@ const SettingsPage: React.FC = () => {
 
   const handleUpdateSetting = async (key: string, value: any) => {
     try {
-      await updateSettings({ [key]: value });
+      await updateSettings({ [key]: value, userEmail: user?.email });
     } catch (error) {
       console.error("Failed to update setting:", error);
     }
@@ -62,7 +74,7 @@ const SettingsPage: React.FC = () => {
 
   const handleSetChatLanguage = async (language: string) => {
     try {
-      await setPreferredChatLanguage({ language });
+      await setPreferredChatLanguage({ language, userEmail: user?.email });
     } catch (error) {
       console.error("Failed to set chat language:", error);
     }
@@ -89,7 +101,7 @@ const SettingsPage: React.FC = () => {
   const handleSaveSocialSettings = async () => {
     setIsSaving(true);
     try {
-      await updateSocialSettings({ spokenLanguages, isDiscoverable });
+      await updateSocialSettings({ spokenLanguages, isDiscoverable, userEmail: user?.email });
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (error) {
@@ -197,6 +209,28 @@ const SettingsPage: React.FC = () => {
           {/* Preferences Tab */}
           {activeTab === "preferences" && settings && (
             <div className="space-y-6">
+              {/* Chat Translation */}
+              <div className="matcha-card p-6">
+                <h3 className="text-lg font-semibold mb-2" style={{ color: "var(--text-primary)" }}>
+                  {t("settings.chatTranslation")}
+                </h3>
+                <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>
+                  {t("settings.preferredChatLanguageHelp")}
+                </p>
+                <div>
+                  <label className="matcha-label">{t("settings.preferredChatLanguage")}</label>
+                  <select
+                    value={settings.preferredChatLanguage || ""}
+                    onChange={(e) => handleSetChatLanguage(e.target.value)}
+                    className="matcha-select max-w-xs"
+                  >
+                    <option value="">{t("settings.selectLanguage")}</option>
+                    <option value="en">{t("settings.english")}</option>
+                    <option value="ar">{t("settings.arabic")}</option>
+                  </select>
+                </div>
+              </div>
+
               {/* Language Preferences */}
               <div className="matcha-card p-6">
                 <h3 className="text-lg font-semibold mb-4" style={{ color: "var(--text-primary)" }}>
@@ -357,27 +391,6 @@ const SettingsPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Chat Translation */}
-              <div className="matcha-card p-6">
-                <h3 className="text-lg font-semibold mb-2" style={{ color: "var(--text-primary)" }}>
-                  {t("settings.chatTranslation")}
-                </h3>
-                <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>
-                  {t("settings.preferredChatLanguageHelp")}
-                </p>
-                <div>
-                  <label className="matcha-label">{t("settings.preferredChatLanguage")}</label>
-                  <select
-                    value={settings.preferredChatLanguage || ""}
-                    onChange={(e) => handleSetChatLanguage(e.target.value)}
-                    className="matcha-select max-w-xs"
-                  >
-                    <option value="">{t("settings.selectLanguage")}</option>
-                    <option value="en">{t("settings.english")}</option>
-                    <option value="ar">{t("settings.arabic")}</option>
-                  </select>
-                </div>
-              </div>
             </div>
           )}
 

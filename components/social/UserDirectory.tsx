@@ -24,6 +24,7 @@ const UserDirectory: React.FC<UserDirectoryProps> = ({ users, isLoading }) => {
   const sendRequest = useMutation(api.friends.mutations.sendRequest);
   const [sendingTo, setSendingTo] = useState<string | null>(null);
   const [requestsSent, setRequestsSent] = useState<Set<string>>(new Set());
+  const [autoAccepted, setAutoAccepted] = useState<Set<string>>(new Set());
 
   const handleSendRequest = async (userId: Id<"users">) => {
     if (!currentUser) {
@@ -33,13 +34,18 @@ const UserDirectory: React.FC<UserDirectoryProps> = ({ users, isLoading }) => {
 
     setSendingTo(userId);
     try {
-      await sendRequest({ userId });
-      // Track that request was sent (for UI feedback)
-      setRequestsSent(prev => new Set(prev).add(userId));
+      const result = await sendRequest({ userId, userEmail: currentUser?.email });
+      if (result?.autoAccepted) {
+        // Mutual request - auto-accepted, they're now friends
+        setAutoAccepted(prev => new Set(prev).add(userId));
+      } else {
+        // Track that request was sent (for UI feedback)
+        setRequestsSent(prev => new Set(prev).add(userId));
+      }
     } catch (error) {
       console.error("Failed to send friend request:", error);
       const errorMessage = error instanceof Error ? error.message : "Failed to send request";
-      // Don't show alert for "already sent" errors since UI will update
+      // Don't show alert for "already" errors since UI will update
       if (!errorMessage.includes("already")) {
         alert(errorMessage);
       }
@@ -126,8 +132,8 @@ const UserDirectory: React.FC<UserDirectoryProps> = ({ users, isLoading }) => {
           .slice(0, 2);
 
         const isSending = sendingTo === user._id;
-        const isPending = user.friendshipStatus === "pending" || requestsSent.has(user._id);
-        const isFriend = user.friendshipStatus === "accepted";
+        const isPending = (user.friendshipStatus === "pending" || requestsSent.has(user._id)) && !autoAccepted.has(user._id);
+        const isFriend = user.friendshipStatus === "accepted" || autoAccepted.has(user._id);
 
         return (
           <div

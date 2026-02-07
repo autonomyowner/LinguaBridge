@@ -10,9 +10,11 @@ import { getAuthenticatedAppUser, getBetterAuthUser } from "../auth";
 /**
  * Get the current authenticated user
  * Throws if not authenticated
+ * Accepts optional fallbackEmail for cross-origin auth token sync issues
  */
 export async function getCurrentUser(
-  ctx: QueryCtx | MutationCtx
+  ctx: QueryCtx | MutationCtx,
+  fallbackEmail?: string
 ): Promise<Doc<"users">> {
   // First try better-auth with app user lookup
   const appUser = await getAuthenticatedAppUser(ctx);
@@ -29,14 +31,25 @@ export async function getCurrentUser(
     if (userByEmail) return userByEmail;
   }
 
+  // Fallback: find by email when Convex auth token isn't synced (cross-origin)
+  if (fallbackEmail) {
+    const userByEmail = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", fallbackEmail))
+      .first();
+    if (userByEmail) return userByEmail;
+  }
+
   throw new Error("Not authenticated");
 }
 
 /**
  * Get the current user or null if not authenticated
+ * Accepts optional fallbackEmail for cross-origin auth token sync issues
  */
 export async function getCurrentUserOrNull(
-  ctx: QueryCtx | MutationCtx
+  ctx: QueryCtx | MutationCtx,
+  fallbackEmail?: string
 ): Promise<Doc<"users"> | null> {
   // First try better-auth with app user lookup
   const appUser = await getAuthenticatedAppUser(ctx);
@@ -49,6 +62,15 @@ export async function getCurrentUserOrNull(
     const userByEmail = await ctx.db
       .query("users")
       .withIndex("by_email", (q) => q.eq("email", authUser.email))
+      .first();
+    if (userByEmail) return userByEmail;
+  }
+
+  // Fallback: find by email when Convex auth token isn't synced (cross-origin)
+  if (fallbackEmail) {
+    const userByEmail = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", fallbackEmail))
       .first();
     if (userByEmail) return userByEmail;
   }

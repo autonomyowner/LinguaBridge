@@ -1,5 +1,6 @@
 import React, { useState, useRef } from "react";
 import VoiceRecorder from "./VoiceRecorder";
+import { useLanguage } from "../../providers/LanguageContext";
 
 interface MessageInputProps {
   onSendText: (content: string) => Promise<void>;
@@ -16,6 +17,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
   const [isSending, setIsSending] = useState(false);
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const { t } = useLanguage();
 
   const handleSendText = async () => {
     if (!message.trim() || isSending || disabled) return;
@@ -71,7 +73,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
           onClick={() => setShowVoiceRecorder(true)}
           disabled={disabled || isSending}
           className="flex-shrink-0 p-2.5 rounded-xl transition-colors hover:bg-black/5 disabled:opacity-50"
-          title="Record voice message"
+          title={t("messages.recordVoice")}
         >
           <svg
             width="20"
@@ -96,7 +98,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Type a message..."
+            placeholder={t("messages.typeMessage")}
             disabled={disabled || isSending}
             className="matcha-input w-full resize-none py-2.5 pr-12"
             style={{ minHeight: "44px", maxHeight: "120px" }}

@@ -3,27 +3,29 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
 import { useAuth } from "../providers/AuthContext";
+import { useLanguage } from "../providers/LanguageContext";
 import { MessageThread, MessageInput } from "./messages";
 
 const FloatingChat: React.FC = () => {
   const { user, isAuthenticated } = useAuth();
+  const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const [selectedFriendId, setSelectedFriendId] = useState<Id<"users"> | null>(null);
   const [selectedFriendName, setSelectedFriendName] = useState<string>("");
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Data
+  // Data - pass email as fallback when Convex auth token isn't synced
   const conversations = useQuery(
     api.messages.queries.listConversations,
-    isAuthenticated ? {} : "skip"
+    isAuthenticated ? { userEmail: user?.email } : "skip"
   );
   const conversation = useQuery(
     api.messages.queries.getConversation,
-    selectedFriendId ? { friendId: selectedFriendId } : "skip"
+    selectedFriendId ? { friendId: selectedFriendId, userEmail: user?.email } : "skip"
   );
   const unreadCount = useQuery(
     api.messages.queries.getUnreadCount,
-    isAuthenticated ? {} : "skip"
+    isAuthenticated ? { userEmail: user?.email } : "skip"
   );
 
   // Mutations
@@ -186,7 +188,7 @@ const FloatingChat: React.FC = () => {
               className="text-sm font-medium"
               style={{ color: "var(--text-primary)" }}
             >
-              Messages
+              {t("messages.title")}
             </span>
             <button
               onClick={() => setIsOpen(false)}
@@ -271,7 +273,7 @@ const FloatingChat: React.FC = () => {
                           className="text-xs truncate"
                           style={{ color: "var(--text-muted)" }}
                         >
-                          {conv.lastMessage.type === "voice" ? "Voice message" : conv.lastMessage.content}
+                          {conv.lastMessage.type === "voice" ? t("messages.voiceMessage") : conv.lastMessage.content}
                         </p>
                       )}
                     </div>
@@ -282,7 +284,7 @@ const FloatingChat: React.FC = () => {
           ) : (
             <div className="text-center py-4">
               <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-                No conversations yet
+                {t("messages.noConversations")}
               </p>
             </div>
           )}

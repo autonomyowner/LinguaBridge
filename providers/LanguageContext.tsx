@@ -260,6 +260,13 @@ const en: Record<string, string> = {
   "messages.messageToStart": "Message a friend to start chatting",
   "messages.you": "You:",
   "messages.noMessages": "No messages yet",
+  "messages.noMessagesYet": "No messages yet",
+  "messages.sendToStart": "Send a message to start the conversation",
+  "messages.typeMessage": "Type a message...",
+  "messages.recordVoice": "Record voice message",
+  "messages.voiceMessage": "Voice message",
+  "time.today": "Today",
+  "time.yesterday": "Yesterday",
 
   // Chat Translation
   "chat.translationEnabled": "Translation enabled",
@@ -604,6 +611,13 @@ const ar: Record<string, string> = {
   "messages.messageToStart": "راسل صديقاً لبدء الدردشة",
   "messages.you": "أنت:",
   "messages.noMessages": "لا توجد رسائل بعد",
+  "messages.noMessagesYet": "لا توجد رسائل بعد",
+  "messages.sendToStart": "أرسل رسالة لبدء المحادثة",
+  "messages.typeMessage": "اكتب رسالة...",
+  "messages.recordVoice": "تسجيل رسالة صوتية",
+  "messages.voiceMessage": "رسالة صوتية",
+  "time.today": "اليوم",
+  "time.yesterday": "أمس",
 
   // Chat Translation
   "chat.translationEnabled": "الترجمة مفعلة",
