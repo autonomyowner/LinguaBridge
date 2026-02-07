@@ -105,7 +105,9 @@ export const sendVoice = mutation({
  * Mark all messages in a conversation as read
  */
 export const markAsRead = mutation({
-  args: { friendId: v.id("users") },
+  args: {
+    friendId: v.id("users"),
+  },
   handler: async (ctx, args) => {
     const currentUser = await getCurrentUser(ctx);
 
@@ -131,7 +133,9 @@ export const markAsRead = mutation({
  * Delete a message (only your own messages)
  */
 export const deleteMessage = mutation({
-  args: { messageId: v.id("messages") },
+  args: {
+    messageId: v.id("messages"),
+  },
   handler: async (ctx, args) => {
     const currentUser = await getCurrentUser(ctx);
 
@@ -166,7 +170,9 @@ export const generateUploadUrl = mutation({
  * Get storage URL for a voice message
  */
 export const getVoiceUrl = mutation({
-  args: { storageId: v.id("_storage") },
+  args: {
+    storageId: v.id("_storage"),
+  },
   handler: async (ctx, args) => {
     await getCurrentUser(ctx); // Ensure authenticated
     return await ctx.storage.getUrl(args.storageId);
@@ -197,3 +203,40 @@ async function checkFriendship(
 
   return asAddressee?.status === "accepted";
 }
+
+/**
+ * Toggle translation for a conversation
+ */
+export const setTranslationEnabled = mutation({
+  args: {
+    friendId: v.id("users"),
+    enabled: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const currentUser = await getCurrentUser(ctx);
+
+    // Check if settings exist
+    const existingSettings = await ctx.db
+      .query("conversationSettings")
+      .withIndex("by_user_friend", (q) =>
+        q.eq("userId", currentUser._id).eq("friendId", args.friendId)
+      )
+      .first();
+
+    if (existingSettings) {
+      // Update existing settings
+      await ctx.db.patch(existingSettings._id, {
+        translationEnabled: args.enabled,
+      });
+    } else {
+      // Create new settings
+      await ctx.db.insert("conversationSettings", {
+        userId: currentUser._id,
+        friendId: args.friendId,
+        translationEnabled: args.enabled,
+      });
+    }
+
+    return { success: true };
+  },
+});

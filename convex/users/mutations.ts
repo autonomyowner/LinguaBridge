@@ -358,3 +358,53 @@ export const updateSubscriptionTier = internalMutation({
     });
   },
 });
+
+/**
+ * Set preferred chat language for message translation
+ */
+export const setPreferredChatLanguage = mutation({
+  args: {
+    language: v.string(), // "en" or "ar"
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUser(ctx);
+
+    // Validate language
+    if (!["en", "ar"].includes(args.language)) {
+      throw new Error("Invalid language. Must be 'en' or 'ar'");
+    }
+
+    const settings = await ctx.db
+      .query("userSettings")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .unique();
+
+    const now = Date.now();
+
+    if (settings) {
+      await ctx.db.patch(settings._id, {
+        preferredChatLanguage: args.language,
+        updatedAt: now,
+      });
+    } else {
+      // Create settings if they don't exist
+      await ctx.db.insert("userSettings", {
+        userId: user._id,
+        preferredSourceLanguage: "en",
+        preferredTargetLanguage: "ar",
+        preferredChatLanguage: args.language,
+        autoPlayTranslations: true,
+        voiceSpeed: 1.0,
+        voiceGender: "neutral",
+        theme: "system",
+        fontSize: "medium",
+        showTimestamps: true,
+        emailNotifications: true,
+        sessionReminders: true,
+        updatedAt: now,
+      });
+    }
+
+    return { success: true };
+  },
+});

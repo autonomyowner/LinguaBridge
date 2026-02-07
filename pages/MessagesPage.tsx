@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { useQuery, useMutation } from "convex/react";
-import { useSearchParams } from "react-router-dom";
+import { useQuery, useMutation, useAction } from "convex/react";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
 import Header from "../components/Header";
@@ -11,11 +11,13 @@ import { useLanguage } from "../providers/LanguageContext";
 const MessagesPage: React.FC = () => {
   const { user } = useAuth();
   const { t } = useLanguage();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialFriendId = searchParams.get("friendId") as Id<"users"> | null;
   const [selectedFriendId, setSelectedFriendId] = useState<Id<"users"> | null>(
     initialFriendId
   );
+  const [isTogglingTranslation, setIsTogglingTranslation] = useState(false);
 
   // Ensure user exists in app database
   const ensureUser = useMutation(api.debug.ensureUserByEmail);
@@ -35,12 +37,19 @@ const MessagesPage: React.FC = () => {
     api.messages.queries.getConversation,
     selectedFriendId ? { friendId: selectedFriendId } : "skip"
   );
+  const conversationSettings = useQuery(
+    api.messages.queries.getConversationSettings,
+    selectedFriendId ? { friendId: selectedFriendId } : "skip"
+  );
+  const userSettings = useQuery(api.users.queries.getSettings);
 
-  // Mutations
+  // Mutations and Actions
   const sendText = useMutation(api.messages.mutations.sendText);
+  const sendTextWithTranslation = useAction(api.messages.actions.sendTextWithTranslation);
   const sendVoice = useMutation(api.messages.mutations.sendVoice);
   const markAsRead = useMutation(api.messages.mutations.markAsRead);
   const generateUploadUrl = useMutation(api.messages.mutations.generateUploadUrl);
+  const setTranslationEnabled = useMutation(api.messages.mutations.setTranslationEnabled);
 
   // Update URL when selection changes
   useEffect(() => {
@@ -64,7 +73,38 @@ const MessagesPage: React.FC = () => {
 
   const handleSendText = async (content: string) => {
     if (!selectedFriendId) return;
-    await sendText({ friendId: selectedFriendId, content });
+
+    // Use translation action if translation is enabled
+    if (conversationSettings?.translationEnabled) {
+      await sendTextWithTranslation({ friendId: selectedFriendId, content });
+    } else {
+      await sendText({ friendId: selectedFriendId, content });
+    }
+  };
+
+  const handleToggleTranslation = async () => {
+    if (!selectedFriendId) return;
+
+    // Check if user has set their preferred language
+    if (!userSettings?.preferredChatLanguage && !conversationSettings?.translationEnabled) {
+      // Prompt user to set their language first
+      if (confirm(t("chat.setLanguageFirst") + "\n\nGo to Settings?")) {
+        navigate("/settings");
+      }
+      return;
+    }
+
+    setIsTogglingTranslation(true);
+    try {
+      await setTranslationEnabled({
+        friendId: selectedFriendId,
+        enabled: !conversationSettings?.translationEnabled,
+      });
+    } catch (error) {
+      console.error("Failed to toggle translation:", error);
+    } finally {
+      setIsTogglingTranslation(false);
+    }
   };
 
   const handleSendVoice = async (blob: Blob, duration: number) => {
@@ -207,6 +247,46 @@ const MessagesPage: React.FC = () => {
                       {conversation.friend.email}
                     </p>
                   </div>
+
+                  {/* Translation Toggle */}
+                  <button
+                    onClick={handleToggleTranslation}
+                    disabled={isTogglingTranslation}
+                    className="p-2 rounded-lg transition-colors"
+                    style={{
+                      background: conversationSettings?.translationEnabled
+                        ? "var(--matcha-100)"
+                        : "transparent",
+                    }}
+                    title={
+                      conversationSettings?.translationEnabled
+                        ? t("chat.disableTranslation")
+                        : t("chat.enableTranslation")
+                    }
+                  >
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      style={{
+                        color: conversationSettings?.translationEnabled
+                          ? "var(--matcha-600)"
+                          : "var(--text-muted)",
+                      }}
+                    >
+                      <path d="m5 8 6 6" />
+                      <path d="m4 14 6-6 2-3" />
+                      <path d="M2 5h12" />
+                      <path d="M7 2h1" />
+                      <path d="m22 22-5-10-5 10" />
+                      <path d="M14 18h6" />
+                    </svg>
+                  </button>
                 </div>
 
                 {/* Messages */}

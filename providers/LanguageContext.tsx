@@ -261,6 +261,13 @@ const en: Record<string, string> = {
   "messages.you": "You:",
   "messages.noMessages": "No messages yet",
 
+  // Chat Translation
+  "chat.translationEnabled": "Translation enabled",
+  "chat.translationDisabled": "Translation disabled",
+  "chat.enableTranslation": "Enable translation",
+  "chat.disableTranslation": "Disable translation",
+  "chat.setLanguageFirst": "Set your preferred chat language in Settings first",
+
   // Notifications
   "notifications.title": "Notifications",
   "notifications.markAllRead": "Mark all read",
@@ -338,6 +345,14 @@ const en: Record<string, string> = {
   "settings.minutesRemaining": "Minutes remaining",
   "settings.quotaUsed": "Quota used",
   "settings.maxParticipants": "Max participants",
+
+  // Chat Translation Settings
+  "settings.chatTranslation": "Chat Translation",
+  "settings.preferredChatLanguage": "Preferred Chat Language",
+  "settings.preferredChatLanguageHelp": "Messages will be automatically translated to this language when translation is enabled",
+  "settings.selectLanguage": "Select language",
+  "settings.english": "English",
+  "settings.arabic": "Arabic",
 };
 
 // Arabic translations
@@ -590,6 +605,13 @@ const ar: Record<string, string> = {
   "messages.you": "أنت:",
   "messages.noMessages": "لا توجد رسائل بعد",
 
+  // Chat Translation
+  "chat.translationEnabled": "الترجمة مفعلة",
+  "chat.translationDisabled": "الترجمة معطلة",
+  "chat.enableTranslation": "تفعيل الترجمة",
+  "chat.disableTranslation": "تعطيل الترجمة",
+  "chat.setLanguageFirst": "حدد لغة الدردشة المفضلة في الإعدادات أولاً",
+
   // Notifications
   "notifications.title": "الإشعارات",
   "notifications.markAllRead": "تحديد الكل كمقروء",
@@ -667,6 +689,14 @@ const ar: Record<string, string> = {
   "settings.minutesRemaining": "الدقائق المتبقية",
   "settings.quotaUsed": "الحصة المستخدمة",
   "settings.maxParticipants": "أقصى عدد مشاركين",
+
+  // Chat Translation Settings
+  "settings.chatTranslation": "ترجمة الدردشة",
+  "settings.preferredChatLanguage": "لغة الدردشة المفضلة",
+  "settings.preferredChatLanguageHelp": "سيتم ترجمة الرسائل تلقائياً إلى هذه اللغة عند تفعيل الترجمة",
+  "settings.selectLanguage": "اختر اللغة",
+  "settings.english": "الإنجليزية",
+  "settings.arabic": "العربية",
 };
 
 const translations: Record<Language, Record<string, string>> = { en, ar };

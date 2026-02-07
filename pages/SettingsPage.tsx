@@ -16,6 +16,7 @@ const SettingsPage: React.FC = () => {
   const updateProfile = useMutation(api.users.mutations.updateProfile);
   const updateSettings = useMutation(api.users.mutations.updateSettings);
   const updateSocialSettings = useMutation(api.users.mutations.updateSocialSettings);
+  const setPreferredChatLanguage = useMutation(api.users.mutations.setPreferredChatLanguage);
   const downgradeToFree = useMutation(api.subscriptions.mutations.downgradeToFree);
 
   const [name, setName] = useState("");
@@ -56,6 +57,14 @@ const SettingsPage: React.FC = () => {
       await updateSettings({ [key]: value });
     } catch (error) {
       console.error("Failed to update setting:", error);
+    }
+  };
+
+  const handleSetChatLanguage = async (language: string) => {
+    try {
+      await setPreferredChatLanguage({ language });
+    } catch (error) {
+      console.error("Failed to set chat language:", error);
     }
   };
 
@@ -345,6 +354,28 @@ const SettingsPage: React.FC = () => {
                     />
                     <span style={{ color: "var(--text-primary)" }}>{t("settings.sessionReminders")}</span>
                   </label>
+                </div>
+              </div>
+
+              {/* Chat Translation */}
+              <div className="matcha-card p-6">
+                <h3 className="text-lg font-semibold mb-2" style={{ color: "var(--text-primary)" }}>
+                  {t("settings.chatTranslation")}
+                </h3>
+                <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>
+                  {t("settings.preferredChatLanguageHelp")}
+                </p>
+                <div>
+                  <label className="matcha-label">{t("settings.preferredChatLanguage")}</label>
+                  <select
+                    value={settings.preferredChatLanguage || ""}
+                    onChange={(e) => handleSetChatLanguage(e.target.value)}
+                    className="matcha-select max-w-xs"
+                  >
+                    <option value="">{t("settings.selectLanguage")}</option>
+                    <option value="en">{t("settings.english")}</option>
+                    <option value="ar">{t("settings.arabic")}</option>
+                  </select>
                 </div>
               </div>
             </div>

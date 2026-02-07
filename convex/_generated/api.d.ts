@@ -8,15 +8,21 @@
  * @module
  */
 
+import type * as admin_mutations from "../admin/mutations.js";
+import type * as admin_queries from "../admin/queries.js";
 import type * as analytics_mutations from "../analytics/mutations.js";
 import type * as auth from "../auth.js";
+import type * as debug from "../debug.js";
 import type * as friends_mutations from "../friends/mutations.js";
 import type * as friends_queries from "../friends/queries.js";
 import type * as http from "../http.js";
 import type * as invitations_mutations from "../invitations/mutations.js";
 import type * as invitations_queries from "../invitations/queries.js";
+import type * as leads_mutations from "../leads/mutations.js";
+import type * as leads_queries from "../leads/queries.js";
 import type * as lib_permissions from "../lib/permissions.js";
 import type * as lib_utils from "../lib/utils.js";
+import type * as messages_actions from "../messages/actions.js";
 import type * as messages_mutations from "../messages/mutations.js";
 import type * as messages_queries from "../messages/queries.js";
 import type * as notifications_mutations from "../notifications/mutations.js";
@@ -40,15 +46,21 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "admin/mutations": typeof admin_mutations;
+  "admin/queries": typeof admin_queries;
   "analytics/mutations": typeof analytics_mutations;
   auth: typeof auth;
+  debug: typeof debug;
   "friends/mutations": typeof friends_mutations;
   "friends/queries": typeof friends_queries;
   http: typeof http;
   "invitations/mutations": typeof invitations_mutations;
   "invitations/queries": typeof invitations_queries;
+  "leads/mutations": typeof leads_mutations;
+  "leads/queries": typeof leads_queries;
   "lib/permissions": typeof lib_permissions;
   "lib/utils": typeof lib_utils;
+  "messages/actions": typeof messages_actions;
   "messages/mutations": typeof messages_mutations;
   "messages/queries": typeof messages_queries;
   "notifications/mutations": typeof notifications_mutations;

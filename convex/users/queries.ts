@@ -61,6 +61,7 @@ export const getSettings = query({
     const defaultSettings = {
       preferredSourceLanguage: "en",
       preferredTargetLanguage: "ar",
+      preferredChatLanguage: null as string | null,
       autoPlayTranslations: true,
       voiceSpeed: 1.0,
       voiceGender: "neutral" as const,
@@ -84,7 +85,10 @@ export const getSettings = query({
       return defaultSettings;
     }
 
-    return settings;
+    return {
+      ...settings,
+      preferredChatLanguage: settings.preferredChatLanguage || null,
+    };
   },
 });
 

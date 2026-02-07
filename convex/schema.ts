@@ -243,6 +243,7 @@ export default defineSchema({
     // Language preferences
     preferredSourceLanguage: v.string(),
     preferredTargetLanguage: v.string(),
+    preferredChatLanguage: v.optional(v.string()), // "en" | "ar" for chat translation
 
     // Audio settings
     autoPlayTranslations: v.boolean(),
@@ -343,6 +344,29 @@ export default defineSchema({
   })
     .index("by_user_unread", ["userId", "isRead"])
     .index("by_user_all", ["userId", "createdAt"]),
+
+  // ============================================
+  // EMAIL LEADS TABLE
+  // Waitlist signups from launch countdown
+  // ============================================
+  emailLeads: defineTable({
+    email: v.string(),
+    source: v.optional(v.string()), // e.g., "homepage", "pricing", etc.
+    createdAt: v.number(),
+  })
+    .index("by_email", ["email"])
+    .index("by_created", ["createdAt"]),
+
+  // ============================================
+  // CONVERSATION SETTINGS TABLE
+  // Per-conversation settings (translation toggle, etc.)
+  // ============================================
+  conversationSettings: defineTable({
+    userId: v.id("users"),
+    friendId: v.id("users"),
+    translationEnabled: v.boolean(),
+  })
+    .index("by_user_friend", ["userId", "friendId"]),
 });
 
 // ============================================
