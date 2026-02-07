@@ -2,15 +2,16 @@ import React, { useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
+import { useAuth } from "../../providers/AuthContext";
 
 interface User {
   _id: Id<"users">;
   name: string;
-  email: string;
+  email?: string;
   imageUrl?: string;
   spokenLanguages: string[];
-  friendshipStatus: "pending" | "accepted" | "rejected" | null;
-  friendshipId: Id<"friendships"> | null;
+  friendshipStatus?: "pending" | "accepted" | "rejected" | null;
+  friendshipId?: Id<"friendships"> | null;
 }
 
 interface UserDirectoryProps {
@@ -19,16 +20,29 @@ interface UserDirectoryProps {
 }
 
 const UserDirectory: React.FC<UserDirectoryProps> = ({ users, isLoading }) => {
+  const { user: currentUser } = useAuth();
   const sendRequest = useMutation(api.friends.mutations.sendRequest);
   const [sendingTo, setSendingTo] = useState<string | null>(null);
+  const [requestsSent, setRequestsSent] = useState<Set<string>>(new Set());
 
   const handleSendRequest = async (userId: Id<"users">) => {
+    if (!currentUser) {
+      alert("Please sign in to send friend requests");
+      return;
+    }
+
     setSendingTo(userId);
     try {
       await sendRequest({ userId });
+      // Track that request was sent (for UI feedback)
+      setRequestsSent(prev => new Set(prev).add(userId));
     } catch (error) {
       console.error("Failed to send friend request:", error);
-      alert(error instanceof Error ? error.message : "Failed to send request");
+      const errorMessage = error instanceof Error ? error.message : "Failed to send request";
+      // Don't show alert for "already sent" errors since UI will update
+      if (!errorMessage.includes("already")) {
+        alert(errorMessage);
+      }
     } finally {
       setSendingTo(null);
     }
@@ -112,7 +126,7 @@ const UserDirectory: React.FC<UserDirectoryProps> = ({ users, isLoading }) => {
           .slice(0, 2);
 
         const isSending = sendingTo === user._id;
-        const isPending = user.friendshipStatus === "pending";
+        const isPending = user.friendshipStatus === "pending" || requestsSent.has(user._id);
         const isFriend = user.friendshipStatus === "accepted";
 
         return (
@@ -152,12 +166,6 @@ const UserDirectory: React.FC<UserDirectoryProps> = ({ users, isLoading }) => {
                 >
                   {user.name}
                 </h3>
-                <p
-                  className="text-sm truncate"
-                  style={{ color: "var(--text-secondary)" }}
-                >
-                  {user.email}
-                </p>
               </div>
             </div>
 
@@ -197,7 +205,7 @@ const UserDirectory: React.FC<UserDirectoryProps> = ({ users, isLoading }) => {
             ) : (
               <button
                 onClick={() => handleSendRequest(user._id)}
-                disabled={isSending}
+                disabled={isSending || !currentUser}
                 className="w-full matcha-btn matcha-btn-primary py-2 text-sm disabled:opacity-50"
               >
                 {isSending ? "Sending..." : "Add Friend"}

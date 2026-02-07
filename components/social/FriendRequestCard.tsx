@@ -2,13 +2,14 @@ import React, { useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
+import { useAuth } from "../../providers/AuthContext";
 
 interface FriendRequestCardProps {
   request: {
     friendshipId: Id<"friendships">;
     requesterId: Id<"users">;
     name: string;
-    email: string;
+    email?: string;
     imageUrl?: string;
     spokenLanguages: string[];
     createdAt: number;
@@ -20,6 +21,7 @@ const FriendRequestCard: React.FC<FriendRequestCardProps> = ({
   request,
   type,
 }) => {
+  const { user } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const acceptRequest = useMutation(api.friends.mutations.acceptRequest);
   const rejectRequest = useMutation(api.friends.mutations.rejectRequest);

@@ -47,9 +47,6 @@ export function SignInForm({ onSuccess }: SignInFormProps) {
         });
       }
 
-      // Wait a moment for auth token to sync with Convex
-      await new Promise(resolve => setTimeout(resolve, 500));
-
       // Redirect on success - use window.location for full page refresh
       if (onSuccess) {
         onSuccess();

@@ -1,7 +1,322 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useMutation } from 'convex/react';
+import { api } from '../convex/_generated/api';
 import Header from '../components/Header';
 import { useLanguage } from '../providers/LanguageContext';
+
+// Launch countdown component
+const LaunchCountdown: React.FC<{ isRTL: boolean }> = ({ isRTL }) => {
+  const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+  const [email, setEmail] = useState('');
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const captureLead = useMutation(api.leads.mutations.capture);
+
+  // Calculate 12 days from now
+  useEffect(() => {
+    const launchDate = new Date();
+    launchDate.setDate(launchDate.getDate() + 12);
+    launchDate.setHours(0, 0, 0, 0);
+
+    const timer = setInterval(() => {
+      const now = new Date().getTime();
+      const distance = launchDate.getTime() - now;
+
+      if (distance > 0) {
+        setTimeLeft({
+          days: Math.floor(distance / (1000 * 60 * 60 * 24)),
+          hours: Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
+          minutes: Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60)),
+          seconds: Math.floor((distance % (1000 * 60)) / 1000),
+        });
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (email && !isSubmitting) {
+      setIsSubmitting(true);
+      try {
+        await captureLead({ email, source: 'homepage' });
+        setIsSubmitted(true);
+        setEmail('');
+      } catch (error) {
+        console.error('Failed to capture lead:', error);
+      } finally {
+        setIsSubmitting(false);
+      }
+    }
+  };
+
+  const TimeBlock = ({ value, label }: { value: number; label: string }) => (
+    <div className="relative group">
+      <div
+        className="relative overflow-hidden"
+        style={{
+          background: 'linear-gradient(145deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.85) 100%)',
+          borderRadius: '20px',
+          padding: '20px 16px',
+          minWidth: '85px',
+          boxShadow: '0 8px 32px rgba(45, 58, 46, 0.12), inset 0 1px 0 rgba(255,255,255,1)',
+          border: '1px solid rgba(104, 166, 125, 0.15)',
+          transition: 'transform 0.3s ease, box-shadow 0.3s ease',
+        }}
+      >
+        {/* Animated gradient accent */}
+        <div
+          className="absolute top-0 left-0 right-0 h-1 rounded-t-xl"
+          style={{
+            background: 'linear-gradient(90deg, var(--matcha-400), var(--terra-400), var(--matcha-500))',
+            backgroundSize: '200% 100%',
+            animation: 'gradientShift 3s ease infinite',
+          }}
+        />
+        <span
+          className="block text-4xl md:text-5xl font-bold tabular-nums"
+          style={{
+            fontFamily: '"DM Serif Display", Georgia, serif',
+            background: 'linear-gradient(135deg, var(--matcha-600) 0%, var(--matcha-700) 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text',
+          }}
+        >
+          {value.toString().padStart(2, '0')}
+        </span>
+        <span
+          className="block text-xs uppercase tracking-widest mt-2 font-semibold"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          {label}
+        </span>
+      </div>
+    </div>
+  );
+
+  return (
+    <section
+      id="launch"
+      className="py-20 md:py-28 px-4 relative overflow-hidden"
+      style={{ background: 'linear-gradient(180deg, var(--cream-100) 0%, var(--cream-200) 100%)' }}
+    >
+      {/* Organic background shapes */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div
+          className="absolute -top-20 -right-20 w-96 h-96 opacity-40 blob-float"
+          style={{
+            background: 'radial-gradient(circle, var(--matcha-200) 0%, transparent 70%)',
+            borderRadius: '60% 40% 70% 30% / 40% 60% 30% 70%',
+          }}
+        />
+        <div
+          className="absolute bottom-0 -left-20 w-80 h-80 opacity-30 blob-float-reverse"
+          style={{
+            background: 'radial-gradient(circle, var(--terra-300) 0%, transparent 70%)',
+            borderRadius: '40% 60% 30% 70% / 60% 40% 70% 30%',
+          }}
+        />
+        {/* Floating particles */}
+        {[...Array(6)].map((_, i) => (
+          <div
+            key={i}
+            className="absolute w-2 h-2 rounded-full"
+            style={{
+              background: i % 2 === 0 ? 'var(--matcha-300)' : 'var(--terra-300)',
+              top: `${20 + i * 12}%`,
+              left: `${10 + i * 15}%`,
+              opacity: 0.4,
+              animation: `float-slow ${6 + i}s ease-in-out infinite`,
+              animationDelay: `${i * 0.5}s`,
+            }}
+          />
+        ))}
+      </div>
+
+      <div className="max-w-4xl mx-auto relative z-10">
+        {/* Section header */}
+        <div className="text-center mb-12">
+          <div
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full mb-6"
+            style={{
+              background: 'linear-gradient(135deg, rgba(224, 123, 76, 0.15) 0%, rgba(104, 166, 125, 0.15) 100%)',
+              border: '1px solid rgba(224, 123, 76, 0.25)',
+            }}
+          >
+            <span
+              className="w-2 h-2 rounded-full pulse-dot"
+              style={{ background: 'var(--terra-400)' }}
+            />
+            <span className="text-sm font-semibold" style={{ color: 'var(--terra-500)' }}>
+              {isRTL ? 'قريباً' : 'Coming Soon'}
+            </span>
+          </div>
+
+          <h2
+            className="text-3xl md:text-5xl mb-4"
+            style={{
+              fontFamily: isRTL ? '"Cairo", system-ui, sans-serif' : '"DM Serif Display", Georgia, serif',
+              color: 'var(--text-primary)',
+              lineHeight: 1.2,
+            }}
+          >
+            {isRTL ? 'الإطلاق الرسمي' : 'Official Launch'}
+            <br />
+            <span className="text-gradient">{isRTL ? 'قريباً جداً' : 'Is Almost Here'}</span>
+          </h2>
+
+          <p
+            className="max-w-lg mx-auto text-lg"
+            style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}
+          >
+            {isRTL
+              ? 'كن أول من يجرب الترجمة الصوتية بالذكاء الاصطناعي. احجز مكانك الآن.'
+              : 'Be the first to experience AI-powered voice translation. Reserve your spot today.'}
+          </p>
+        </div>
+
+        {/* Countdown timer */}
+        <div
+          className={`flex justify-center gap-3 md:gap-5 mb-14 ${isRTL ? 'flex-row-reverse' : ''}`}
+        >
+          <TimeBlock value={timeLeft.days} label={isRTL ? 'يوم' : 'Days'} />
+          <div className="flex items-center text-3xl font-bold" style={{ color: 'var(--matcha-400)' }}>:</div>
+          <TimeBlock value={timeLeft.hours} label={isRTL ? 'ساعة' : 'Hours'} />
+          <div className="flex items-center text-3xl font-bold" style={{ color: 'var(--matcha-400)' }}>:</div>
+          <TimeBlock value={timeLeft.minutes} label={isRTL ? 'دقيقة' : 'Mins'} />
+          <div className="hidden sm:flex items-center text-3xl font-bold" style={{ color: 'var(--matcha-400)' }}>:</div>
+          <div className="hidden sm:block">
+            <TimeBlock value={timeLeft.seconds} label={isRTL ? 'ثانية' : 'Secs'} />
+          </div>
+        </div>
+
+        {/* Email capture form */}
+        <div className="max-w-xl mx-auto">
+          {isSubmitted ? (
+            <div
+              className="text-center p-8 rounded-2xl animate-fade-in"
+              style={{
+                background: 'linear-gradient(135deg, rgba(104, 166, 125, 0.1) 0%, rgba(104, 166, 125, 0.05) 100%)',
+                border: '1px solid rgba(104, 166, 125, 0.3)',
+              }}
+            >
+              <div
+                className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center"
+                style={{ background: 'var(--matcha-100)' }}
+              >
+                <svg
+                  className="w-8 h-8"
+                  fill="none"
+                  stroke="var(--matcha-600)"
+                  viewBox="0 0 24 24"
+                  strokeWidth={2.5}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h3
+                className="text-xl mb-2"
+                style={{
+                  fontFamily: isRTL ? '"Cairo", system-ui, sans-serif' : '"DM Serif Display", Georgia, serif',
+                  color: 'var(--matcha-700)',
+                }}
+              >
+                {isRTL ? 'أنت في القائمة!' : "You're on the list!"}
+              </h3>
+              <p style={{ color: 'var(--text-secondary)' }}>
+                {isRTL
+                  ? 'سنرسل لك إشعاراً فور الإطلاق.'
+                  : "We'll notify you the moment we launch."}
+              </p>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="relative">
+              <div
+                className="relative flex flex-col sm:flex-row gap-3 p-3 rounded-2xl"
+                onMouseEnter={() => setIsHovered(true)}
+                onMouseLeave={() => setIsHovered(false)}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.9)',
+                  backdropFilter: 'blur(20px)',
+                  boxShadow: isHovered
+                    ? '0 20px 60px rgba(104, 166, 125, 0.2), 0 0 0 1px rgba(104, 166, 125, 0.3)'
+                    : '0 10px 40px rgba(45, 58, 46, 0.1), 0 0 0 1px rgba(104, 166, 125, 0.15)',
+                  transition: 'box-shadow 0.4s ease',
+                }}
+              >
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder={isRTL ? 'أدخل بريدك الإلكتروني' : 'Enter your email address'}
+                  required
+                  className="flex-1 px-5 py-4 text-base rounded-xl border-0 outline-none"
+                  style={{
+                    background: 'var(--cream-50)',
+                    color: 'var(--text-primary)',
+                    direction: isRTL ? 'rtl' : 'ltr',
+                  }}
+                />
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-8 py-4 font-semibold rounded-xl transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed"
+                  style={{
+                    background: 'linear-gradient(135deg, var(--matcha-500) 0%, var(--matcha-600) 100%)',
+                    color: 'white',
+                    boxShadow: '0 4px 20px rgba(104, 166, 125, 0.4)',
+                  }}
+                >
+                  {isSubmitting ? (isRTL ? 'جاري الإرسال...' : 'Sending...') : (isRTL ? 'أعلمني' : 'Notify Me')}
+                </button>
+              </div>
+
+              {/* Trust indicators */}
+              <div className={`flex items-center justify-center gap-6 mt-6 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                  <svg className="w-4 h-4" fill="var(--matcha-500)" viewBox="0 0 20 20">
+                    <path
+                      fillRule="evenodd"
+                      d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                    {isRTL ? 'مجاني للمبكرين' : 'Free for early birds'}
+                  </span>
+                </div>
+                <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                  <svg className="w-4 h-4" fill="var(--matcha-500)" viewBox="0 0 20 20">
+                    <path
+                      fillRule="evenodd"
+                      d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                    {isRTL ? 'لا رسائل مزعجة' : 'No spam, ever'}
+                  </span>
+                </div>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+
+      {/* CSS for gradient animation */}
+      <style>{`
+        @keyframes gradientShift {
+          0%, 100% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+        }
+      `}</style>
+    </section>
+  );
+};
 
 const HomePage: React.FC = () => {
   const [mounted, setMounted] = useState(false);
@@ -322,6 +637,9 @@ const HomePage: React.FC = () => {
           </div>
         </div>
       </section>
+
+      {/* Launch Countdown Section */}
+      <LaunchCountdown isRTL={isRTL} />
 
       {/* How It Works */}
       <section id="how-it-works" className="py-24 px-4 relative z-10">

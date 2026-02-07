@@ -2,12 +2,14 @@ import React, { useState, useRef, useEffect } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import NotificationDropdown from "./NotificationDropdown";
+import { useAuth } from "../../providers/AuthContext";
 
 interface NotificationBellProps {
   className?: string;
 }
 
 const NotificationBell: React.FC<NotificationBellProps> = ({ className }) => {
+  const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const unreadCount = useQuery(api.notifications.queries.getUnreadCount) ?? 0;

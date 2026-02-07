@@ -7,7 +7,9 @@ import { Id } from "../_generated/dataModel";
  * Mark a single notification as read
  */
 export const markAsRead = mutation({
-  args: { notificationId: v.id("notifications") },
+  args: {
+    notificationId: v.id("notifications"),
+  },
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
 
@@ -49,7 +51,9 @@ export const markAllAsRead = mutation({
  * Delete a notification
  */
 export const deleteNotification = mutation({
-  args: { notificationId: v.id("notifications") },
+  args: {
+    notificationId: v.id("notifications"),
+  },
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
 

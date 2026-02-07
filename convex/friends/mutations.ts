@@ -7,7 +7,9 @@ import { createNotification } from "../notifications/mutations";
  * Send a friend request to another user
  */
 export const sendRequest = mutation({
-  args: { userId: v.id("users") },
+  args: {
+    userId: v.id("users"),
+  },
   handler: async (ctx, args) => {
     const currentUser = await getCurrentUser(ctx);
 
@@ -115,7 +117,9 @@ export const sendRequest = mutation({
  * Accept a friend request
  */
 export const acceptRequest = mutation({
-  args: { friendshipId: v.id("friendships") },
+  args: {
+    friendshipId: v.id("friendships"),
+  },
   handler: async (ctx, args) => {
     const currentUser = await getCurrentUser(ctx);
 
@@ -156,7 +160,9 @@ export const acceptRequest = mutation({
  * Reject a friend request
  */
 export const rejectRequest = mutation({
-  args: { friendshipId: v.id("friendships") },
+  args: {
+    friendshipId: v.id("friendships"),
+  },
   handler: async (ctx, args) => {
     const currentUser = await getCurrentUser(ctx);
 
@@ -190,7 +196,9 @@ export const rejectRequest = mutation({
  * Cancel a sent friend request
  */
 export const cancelRequest = mutation({
-  args: { friendshipId: v.id("friendships") },
+  args: {
+    friendshipId: v.id("friendships"),
+  },
   handler: async (ctx, args) => {
     const currentUser = await getCurrentUser(ctx);
 
@@ -219,7 +227,9 @@ export const cancelRequest = mutation({
  * Unfriend a user
  */
 export const unfriend = mutation({
-  args: { userId: v.id("users") },
+  args: {
+    userId: v.id("users"),
+  },
   handler: async (ctx, args) => {
     const currentUser = await getCurrentUser(ctx);
 
@@ -257,7 +267,9 @@ export const unfriend = mutation({
  * Check if two users are friends
  */
 export const areFriends = mutation({
-  args: { userId: v.id("users") },
+  args: {
+    userId: v.id("users"),
+  },
   handler: async (ctx, args) => {
     const currentUser = await getCurrentUser(ctx);
 

@@ -1,10 +1,18 @@
-import React, { createContext, useContext, ReactNode } from "react";
+import React, { createContext, useContext, ReactNode, useState, useEffect } from "react";
+import { authClient, getStoredSession, saveSession, clearSession } from "../lib/auth-client";
+
+interface User {
+  id: string;
+  email: string;
+  name?: string;
+}
 
 interface AuthContextType {
-  user: null;
+  user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   signOut: () => Promise<void>;
+  refreshSession: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -14,19 +22,68 @@ interface AuthProviderProps {
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
-  // Auth system removed - always allow access
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Check for stored session on mount
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        // First check localStorage
+        const storedSession = getStoredSession();
+        if (storedSession?.user) {
+          setUser(storedSession.user);
+          setIsLoading(false);
+          return;
+        }
+
+        // Try to fetch session from server (might work with cookies)
+        const { data: session } = await authClient.getSession();
+        if (session?.user) {
+          const userData = {
+            id: session.user.id,
+            email: session.user.email,
+            name: session.user.name,
+          };
+          setUser(userData);
+          saveSession({ user: userData });
+        }
+      } catch (error) {
+        console.error("Session check failed:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    checkSession();
+  }, []);
+
+  const refreshSession = () => {
+    const storedSession = getStoredSession();
+    if (storedSession?.user) {
+      setUser(storedSession.user);
+    }
+  };
+
   const handleSignOut = async () => {
-    // No-op since there's no auth backend
+    try {
+      await authClient.signOut();
+    } catch (error) {
+      console.error("Sign out error:", error);
+    }
+    clearSession();
+    setUser(null);
     window.location.href = "/";
   };
 
   return (
     <AuthContext.Provider
       value={{
-        user: null,
-        isLoading: false,
-        isAuthenticated: true, // Always authenticated since auth is removed
+        user,
+        isLoading,
+        isAuthenticated: !!user,
         signOut: handleSignOut,
+        refreshSession,
       }}
     >
       {children}
@@ -43,7 +100,7 @@ export function useAuth() {
 }
 
 /**
- * Hook to get the current user
+ * Hook to get the current user (legacy compatibility)
  */
 export function useCurrentUser() {
   const { user, isLoading, isAuthenticated } = useAuth();

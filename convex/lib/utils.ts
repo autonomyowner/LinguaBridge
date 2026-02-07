@@ -1,6 +1,7 @@
 import { QueryCtx, MutationCtx, ActionCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
 import { TIER_LIMITS, SubscriptionTier } from "../schema";
+import { getAuthenticatedAppUser, getBetterAuthUser } from "../auth";
 
 // ============================================
 // USER HELPERS
@@ -13,52 +14,22 @@ import { TIER_LIMITS, SubscriptionTier } from "../schema";
 export async function getCurrentUser(
   ctx: QueryCtx | MutationCtx
 ): Promise<Doc<"users">> {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity) {
-    throw new Error("Not authenticated");
-  }
+  // First try better-auth with app user lookup
+  const appUser = await getAuthenticatedAppUser(ctx);
+  if (appUser) return appUser;
 
-  // Convex Auth stores user ID directly in subject (format: users|<id>)
-  // Try to extract and use the ID directly
-  if (identity.subject && identity.subject.includes("|")) {
-    const [table, id] = identity.subject.split("|");
-    if (table === "users" && id) {
-      try {
-        const user = await ctx.db.get(id as Id<"users">);
-        if (user) return user;
-      } catch {
-        // ID format might be wrong, continue with other methods
-      }
-    }
-  }
-
-  // Try to find user by tokenIdentifier first
-  let user = await ctx.db
-    .query("users")
-    .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
-    .unique();
-
-  // If not found, try to find by subject (Convex Auth uses this)
-  if (!user && identity.subject) {
-    user = await ctx.db
+  // Check if user is authenticated via better-auth but no app user exists yet
+  const authUser = await getBetterAuthUser(ctx);
+  if (authUser && authUser.email) {
+    // Try to find by email (user may exist from previous auth system)
+    const userByEmail = await ctx.db
       .query("users")
-      .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.subject))
-      .unique();
+      .withIndex("by_email", (q) => q.eq("email", authUser.email))
+      .first();
+    if (userByEmail) return userByEmail;
   }
 
-  // If not found, try to find by email (for new auth users)
-  if (!user && identity.email) {
-    user = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", identity.email as string))
-      .unique();
-  }
-
-  if (!user) {
-    throw new Error("User not found");
-  }
-
-  return user;
+  throw new Error("Not authenticated");
 }
 
 /**
@@ -67,48 +38,22 @@ export async function getCurrentUser(
 export async function getCurrentUserOrNull(
   ctx: QueryCtx | MutationCtx
 ): Promise<Doc<"users"> | null> {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity) {
-    return null;
-  }
+  // First try better-auth with app user lookup
+  const appUser = await getAuthenticatedAppUser(ctx);
+  if (appUser) return appUser;
 
-  // Convex Auth stores user ID directly in subject (format: users|<id>)
-  // Try to extract and use the ID directly
-  if (identity.subject && identity.subject.includes("|")) {
-    const [table, id] = identity.subject.split("|");
-    if (table === "users" && id) {
-      try {
-        const user = await ctx.db.get(id as Id<"users">);
-        if (user) return user;
-      } catch {
-        // ID format might be wrong, continue with other methods
-      }
-    }
-  }
-
-  // Try to find user by tokenIdentifier
-  let user = await ctx.db
-    .query("users")
-    .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
-    .unique();
-
-  // If not found, try to find by subject
-  if (!user && identity.subject) {
-    user = await ctx.db
+  // Check if user is authenticated via better-auth but no app user exists yet
+  const authUser = await getBetterAuthUser(ctx);
+  if (authUser && authUser.email) {
+    // Try to find by email (user may exist from previous auth system)
+    const userByEmail = await ctx.db
       .query("users")
-      .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.subject))
-      .unique();
+      .withIndex("by_email", (q) => q.eq("email", authUser.email))
+      .first();
+    if (userByEmail) return userByEmail;
   }
 
-  // If not found, try to find by email (for new auth users)
-  if (!user && identity.email) {
-    user = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", identity.email as string))
-      .unique();
-  }
-
-  return user;
+  return null;
 }
 
 /**

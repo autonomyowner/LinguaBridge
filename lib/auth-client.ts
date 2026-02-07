@@ -9,7 +9,6 @@ export const authClient = createAuthClient({
   plugins: [convexClient()],
   fetchOptions: {
     credentials: "include",
-    mode: "cors",
   },
 });
 

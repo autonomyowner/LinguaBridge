@@ -3,6 +3,7 @@ import { useMutation } from "convex/react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../convex/_generated/api";
 import { Doc } from "../../convex/_generated/dataModel";
+import { useAuth } from "../../providers/AuthContext";
 
 interface NotificationItemProps {
   notification: Doc<"notifications">;
@@ -13,6 +14,7 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
   notification,
   onClose,
 }) => {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const markAsRead = useMutation(api.notifications.mutations.markAsRead);
 

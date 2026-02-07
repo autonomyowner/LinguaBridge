@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
+import { useAuth } from "../../providers/AuthContext";
 
 interface VoicePlayerProps {
   storageId: string;
@@ -14,6 +15,7 @@ const VoicePlayer: React.FC<VoicePlayerProps> = ({
   duration,
   isFromMe = false,
 }) => {
+  const { user } = useAuth();
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [isLoading, setIsLoading] = useState(false);

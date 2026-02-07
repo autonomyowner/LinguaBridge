@@ -8,7 +8,6 @@ import authConfig from "./auth.config";
 
 // IMPORTANT: Use your frontend URL here, NOT the Convex site URL
 const siteUrl = process.env.SITE_URL || "http://localhost:3000";
-const isProduction = siteUrl.includes("travoices.xyz");
 
 export const authComponent = createClient<DataModel>(components.betterAuth);
 
@@ -20,37 +19,13 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
       "https://www.travoices.xyz",
       "https://travoices.xyz",
       "http://localhost:3000",
-      "http://localhost:5173", // Vite default port
+      "http://localhost:5173",
     ],
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: false,
       minPasswordLength: 8,
     },
-    // Cross-origin configuration - use token-based auth for Convex
-    // Cookies don't work across different domains (travoices.xyz vs convex.site)
-    advanced: {
-      defaultCookieAttributes: {
-        sameSite: "none",
-        secure: true,
-        httpOnly: true,
-        path: "/",
-      },
-    },
-    session: {
-      // Use shorter cookie name to avoid issues
-      cookieCache: {
-        enabled: true,
-        maxAge: 60 * 60 * 24 * 7, // 7 days
-      },
-    },
-    // Google OAuth disabled for now - can be added later
-    // socialProviders: {
-    //   google: {
-    //     clientId: process.env.GOOGLE_CLIENT_ID!,
-    //     clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-    //   },
-    // },
     plugins: [convex({ authConfig })],
   });
 };
