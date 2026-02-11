@@ -1,6 +1,6 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai';
-import { Room, RoomEvent, RemoteParticipant, LocalAudioTrack } from 'livekit-client';
+import { Room, RoomEvent, RemoteParticipant, RemoteTrack, LocalAudioTrack } from 'livekit-client';
 import { useAction, useMutation, useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { SUPPORTED_LANGUAGES, TranslationMessage, Language } from '../types';
@@ -14,6 +14,13 @@ import { Id } from '../convex/_generated/dataModel';
 const MODEL_NAME = 'gemini-2.5-flash-native-audio-preview-09-2025';
 const INPUT_SAMPLE_RATE = 16000;
 const OUTPUT_SAMPLE_RATE = 24000;
+const MAX_AUDIO_QUEUE_DEPTH = 10;
+const MAX_RECONNECT_ATTEMPTS = 5;
+const RECONNECT_BASE_DELAY = 1000; // 1s
+const RECONNECT_MAX_DELAY = 30000; // 30s
+const USAGE_CHECK_INTERVAL = 60000; // Check usage every 60s
+
+type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
 
 const TRAVoicesPage: React.FC = () => {
   const { user, isAuthenticated } = useAuth();
@@ -31,14 +38,18 @@ const TRAVoicesPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [currentRoomId, setCurrentRoomId] = useState<Id<"rooms"> | null>(null);
   const [currentSessionId, setCurrentSessionId] = useState<Id<"sessions"> | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
+  const [usageWarning, setUsageWarning] = useState<string | null>(null);
 
   // --- Convex Hooks ---
   const generateLiveKitToken = useAction(api.rooms.actions.generateLiveKitToken);
+  const getGeminiApiKey = useAction(api.rooms.actions.getGeminiApiKey);
   const findOrCreateRoom = useMutation(api.rooms.mutations.findOrCreate);
   const startSession = useMutation(api.sessions.mutations.start);
   const endSession = useMutation(api.sessions.mutations.end);
   const addMessage = useMutation(api.transcripts.mutations.addMessage);
-  const userSettings = useQuery(api.users.queries.getSettings);
+  const userSettings = useQuery(api.users.queries.getSettings, {});
+  const subscription = useQuery(api.subscriptions.queries.getCurrent, {});
 
   // Set default name from user
   React.useEffect(() => {
@@ -68,11 +79,33 @@ const TRAVoicesPage: React.FC = () => {
   const localStreamRef = useRef<MediaStream | null>(null);
   const nextStartTimeRef = useRef<number>(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const audioQueueDepthRef = useRef<number>(0);
   const transcriptBufferRef = useRef({ input: '', output: '' });
+  const audioElementsRef = useRef<Set<HTMLAudioElement>>(new Set());
+  const reconnectAttemptsRef = useRef<number>(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const usageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sessionStartTimeRef = useRef<number>(0);
+  const geminiApiKeyRef = useRef<string | null>(null);
 
   const stopAll = useCallback(async () => {
     setIsActive(false);
     setIsConnecting(false);
+    setConnectionStatus('disconnected');
+    setUsageWarning(null);
+
+    // Clear reconnect timer
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    reconnectAttemptsRef.current = 0;
+
+    // Clear usage check timer
+    if (usageTimerRef.current) {
+      clearInterval(usageTimerRef.current);
+      usageTimerRef.current = null;
+    }
 
     // End session in database
     if (currentSessionId) {
@@ -104,13 +137,217 @@ const TRAVoicesPage: React.FC = () => {
 
     sourcesRef.current.forEach(s => { try { s.stop(); } catch(e) {} });
     sourcesRef.current.clear();
+    audioQueueDepthRef.current = 0;
+
+    // Clean up audio elements (fix memory leak)
+    audioElementsRef.current.forEach(el => {
+      el.pause();
+      el.srcObject = null;
+      el.remove();
+    });
+    audioElementsRef.current.clear();
+
+    geminiApiKeyRef.current = null;
     setParticipants([]);
     nextStartTimeRef.current = 0;
+    sessionStartTimeRef.current = 0;
   }, [currentSessionId, endSession]);
 
-  const connectBridge = async () => {
-    console.log('[TRAVoices v2] Using findOrCreateRoom - room sync enabled');
+  // --- Mid-session usage check ---
+  const checkUsageMidSession = useCallback(() => {
+    if (!subscription || !sessionStartTimeRef.current) return;
 
+    const elapsedMinutes = Math.round((Date.now() - sessionStartTimeRef.current) / 60000);
+    const totalUsed = (subscription.usage.minutesUsed ?? 0) + elapsedMinutes;
+    const limit = subscription.limits.minutesPerMonth;
+
+    if (limit === Infinity) return;
+
+    const percentUsed = Math.round((totalUsed / limit) * 100);
+
+    if (totalUsed >= limit) {
+      setUsageWarning(null);
+      setError(`You've used all ${limit} minutes for this month. Session ended.`);
+      stopAll();
+    } else if (percentUsed >= 95) {
+      setUsageWarning(`${limit - totalUsed} minutes remaining — session will end at limit`);
+    } else if (percentUsed >= 90) {
+      setUsageWarning(`${limit - totalUsed} minutes remaining this month`);
+    }
+  }, [subscription, stopAll]);
+
+  // Usage timer effect
+  useEffect(() => {
+    if (isActive && subscription) {
+      usageTimerRef.current = setInterval(checkUsageMidSession, USAGE_CHECK_INTERVAL);
+      return () => {
+        if (usageTimerRef.current) {
+          clearInterval(usageTimerRef.current);
+          usageTimerRef.current = null;
+        }
+      };
+    }
+  }, [isActive, subscription, checkUsageMidSession]);
+
+  // --- Gemini reconnection with exponential backoff ---
+  const reconnectGemini = useCallback(async () => {
+    if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
+      setError('Connection lost. Please restart the session.');
+      setConnectionStatus('disconnected');
+      stopAll();
+      return;
+    }
+
+    reconnectAttemptsRef.current += 1;
+    const delay = Math.min(
+      RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttemptsRef.current - 1),
+      RECONNECT_MAX_DELAY
+    );
+
+    setConnectionStatus('reconnecting');
+    setError(`Reconnecting... (attempt ${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})`);
+
+    reconnectTimerRef.current = setTimeout(async () => {
+      try {
+        if (!geminiApiKeyRef.current || !audioContextInRef.current || !localStreamRef.current || !audioContextOutRef.current || !destNodeRef.current) {
+          stopAll();
+          return;
+        }
+
+        const ai = new GoogleGenAI({ apiKey: geminiApiKeyRef.current });
+        const systemInstruction = `
+          You are a high-fidelity real-time translator.
+          Your user speaks ${myLang.name}. You must translate their speech into ${theirLang.name}.
+          The translated audio will be broadcast to a global room.
+          Translate precisely and maintain the original tone.
+          Only output the translated speech as audio.
+        `;
+
+        const sessionPromise = ai.live.connect({
+          model: MODEL_NAME,
+          callbacks: {
+            onopen: () => {
+              const source = audioContextInRef.current!.createMediaStreamSource(localStreamRef.current!);
+              const processor = audioContextInRef.current!.createScriptProcessor(4096, 1, 1);
+
+              processor.onaudioprocess = (e) => {
+                const inputData = e.inputBuffer.getChannelData(0);
+                sessionPromise.then(session => session.sendRealtimeInput({ media: createBlob(inputData) }));
+              };
+              source.connect(processor);
+              processor.connect(audioContextInRef.current!.destination);
+
+              reconnectAttemptsRef.current = 0;
+              setConnectionStatus('connected');
+              setError(null);
+            },
+            onmessage: handleGeminiMessage,
+            onerror: (e) => {
+              console.error('Gemini reconnection error:', e);
+              reconnectGemini();
+            },
+            onclose: () => {
+              if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
+                reconnectGemini();
+              }
+            },
+          },
+          config: {
+            responseModalities: [Modality.AUDIO],
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
+            systemInstruction,
+            inputAudioTranscription: {},
+            outputAudioTranscription: {}
+          }
+        });
+
+        sessionRef.current = await sessionPromise;
+      } catch (err) {
+        console.error('Reconnection failed:', err);
+        reconnectGemini();
+      }
+    }, delay);
+  }, [myLang, theirLang, stopAll]);
+
+  // --- Gemini message handler (shared between connect and reconnect) ---
+  const handleGeminiMessage = useCallback(async (message: LiveServerMessage) => {
+    const base64Audio = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
+    if (base64Audio && audioContextOutRef.current && destNodeRef.current) {
+      // Audio queue depth limit — skip oldest if queue is too deep
+      if (audioQueueDepthRef.current >= MAX_AUDIO_QUEUE_DEPTH) {
+        return; // Drop this audio chunk to prevent growing delay
+      }
+
+      const ctx = audioContextOutRef.current;
+      const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, OUTPUT_SAMPLE_RATE, 1);
+
+      const sourceNode = ctx.createBufferSource();
+      sourceNode.buffer = audioBuffer;
+      sourceNode.connect(destNodeRef.current);
+
+      nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
+      sourceNode.start(nextStartTimeRef.current);
+      nextStartTimeRef.current += audioBuffer.duration;
+
+      audioQueueDepthRef.current += 1;
+      sourcesRef.current.add(sourceNode);
+      sourceNode.onended = () => {
+        sourcesRef.current.delete(sourceNode);
+        audioQueueDepthRef.current = Math.max(0, audioQueueDepthRef.current - 1);
+      };
+    }
+
+    if (message.serverContent?.inputTranscription) transcriptBufferRef.current.input += message.serverContent.inputTranscription.text;
+    if (message.serverContent?.outputTranscription) transcriptBufferRef.current.output += message.serverContent.outputTranscription.text;
+
+    if (message.serverContent?.turnComplete) {
+      const { input, output } = transcriptBufferRef.current;
+      if (input.trim()) {
+        const inputMsg: TranslationMessage = { id: Date.now().toString(), sender: 'user', text: input, timestamp: new Date(), language: myLang.code };
+        setTranscript(prev => [inputMsg, ...prev]);
+
+        if (currentSessionId) {
+          try {
+            await addMessage({
+              sessionId: currentSessionId,
+              originalText: input,
+              sourceLanguage: myLang.code,
+              messageType: 'speech',
+            });
+          } catch (e) {
+            console.error('Failed to save transcript:', e);
+          }
+        }
+      }
+      if (output.trim()) {
+        const outputMsg: TranslationMessage = { id: Date.now().toString() + 'a', sender: 'agent', text: output, timestamp: new Date(), language: theirLang.code };
+        setTranscript(prev => [outputMsg, ...prev]);
+
+        if (currentSessionId) {
+          try {
+            await addMessage({
+              sessionId: currentSessionId,
+              originalText: output,
+              sourceLanguage: theirLang.code,
+              messageType: 'translation',
+            });
+          } catch (e) {
+            console.error('Failed to save translation:', e);
+          }
+        }
+      }
+      transcriptBufferRef.current = { input: '', output: '' };
+    }
+
+    if (message.serverContent?.interrupted) {
+      sourcesRef.current.forEach(s => { try { s.stop(); } catch(e) {} });
+      sourcesRef.current.clear();
+      audioQueueDepthRef.current = 0;
+      nextStartTimeRef.current = 0;
+    }
+  }, [myLang, theirLang, currentSessionId, addMessage]);
+
+  const connectBridge = async () => {
     if (!isAuthenticated) {
       setError(t('translate.signInToStart'));
       return;
@@ -118,17 +355,15 @@ const TRAVoicesPage: React.FC = () => {
 
     if (isActive || isConnecting) return;
     setIsConnecting(true);
+    setConnectionStatus('connecting');
     setError(null);
 
     try {
-      // Validate Gemini API key
-      const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!geminiApiKey) {
-        throw new Error('Gemini API key not configured');
-      }
+      // Fetch Gemini API key from server (never exposed in frontend bundle)
+      const { apiKey: geminiApiKey } = await getGeminiApiKey({});
+      geminiApiKeyRef.current = geminiApiKey;
 
       // Find existing room or create new one
-      // This ensures users joining "GlobalLobby" all end up in the same room
       const result = await findOrCreateRoom({
         name: roomName,
         description: `Translation room: ${myLang.name} to ${theirLang.name}`,
@@ -142,27 +377,52 @@ const TRAVoicesPage: React.FC = () => {
       // Generate LiveKit token from backend (SECURE - no credentials exposed)
       const { token, url } = await generateLiveKitToken({ roomId });
 
-      // Start session
+      // Start session (server enforces auth + concurrent session limit)
       const { sessionId } = await startSession({ roomId });
       setCurrentSessionId(sessionId);
+      sessionStartTimeRef.current = Date.now();
 
-      // Setup audio contexts FIRST
+      // Setup audio contexts
       audioContextInRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: INPUT_SAMPLE_RATE });
       audioContextOutRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: OUTPUT_SAMPLE_RATE });
       destNodeRef.current = audioContextOutRef.current.createMediaStreamDestination();
 
-      // Get microphone access FIRST
+      // Get microphone access
       localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-      // Connect to LiveKit FIRST (before Gemini, to avoid race condition)
+      // Connect to LiveKit (before Gemini, to avoid race condition)
       const room = new Room();
       lkRoomRef.current = room;
 
       room.on(RoomEvent.ParticipantConnected, () => setParticipants(Array.from(room.remoteParticipants.values())));
       room.on(RoomEvent.ParticipantDisconnected, () => setParticipants(Array.from(room.remoteParticipants.values())));
-      room.on(RoomEvent.TrackSubscribed, (track) => {
+
+      // Track audio elements for cleanup (fix memory leak)
+      room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
         const el = track.attach();
         document.body.appendChild(el);
+        audioElementsRef.current.add(el as HTMLAudioElement);
+      });
+      room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
+        const elements = track.detach();
+        elements.forEach(el => {
+          el.remove();
+          audioElementsRef.current.delete(el as HTMLAudioElement);
+        });
+      });
+
+      // LiveKit connection state handlers
+      room.on(RoomEvent.Disconnected, () => {
+        setConnectionStatus('disconnected');
+        setError('Room connection lost. Please restart the session.');
+        stopAll();
+      });
+      room.on(RoomEvent.Reconnecting, () => {
+        setConnectionStatus('reconnecting');
+      });
+      room.on(RoomEvent.Reconnected, () => {
+        setConnectionStatus('connected');
+        setError(null);
       });
 
       await room.connect(url, token);
@@ -171,7 +431,7 @@ const TRAVoicesPage: React.FC = () => {
       const translatedTrack = new LocalAudioTrack(destNodeRef.current.stream.getAudioTracks()[0]);
       await room.localParticipant.publishTrack(translatedTrack);
 
-      // NOW connect to Gemini AI (LiveKit is already stable)
+      // Connect to Gemini AI (LiveKit is already stable)
       const ai = new GoogleGenAI({ apiKey: geminiApiKey });
 
       const systemInstruction = `
@@ -186,7 +446,6 @@ const TRAVoicesPage: React.FC = () => {
         model: MODEL_NAME,
         callbacks: {
           onopen: () => {
-            // Setup audio input pipeline after Gemini is ready
             const source = audioContextInRef.current!.createMediaStreamSource(localStreamRef.current!);
             const processor = audioContextInRef.current!.createScriptProcessor(4096, 1, 1);
 
@@ -199,80 +458,22 @@ const TRAVoicesPage: React.FC = () => {
 
             setIsActive(true);
             setIsConnecting(false);
+            setConnectionStatus('connected');
           },
-          onmessage: async (message: LiveServerMessage) => {
-            const base64Audio = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
-            if (base64Audio && audioContextOutRef.current && destNodeRef.current) {
-              const ctx = audioContextOutRef.current;
-              const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, OUTPUT_SAMPLE_RATE, 1);
-
-              const sourceNode = ctx.createBufferSource();
-              sourceNode.buffer = audioBuffer;
-              sourceNode.connect(destNodeRef.current);
-
-              nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
-              sourceNode.start(nextStartTimeRef.current);
-              nextStartTimeRef.current += audioBuffer.duration;
-
-              sourcesRef.current.add(sourceNode);
-              sourceNode.onended = () => sourcesRef.current.delete(sourceNode);
-            }
-
-            if (message.serverContent?.inputTranscription) transcriptBufferRef.current.input += message.serverContent.inputTranscription.text;
-            if (message.serverContent?.outputTranscription) transcriptBufferRef.current.output += message.serverContent.outputTranscription.text;
-
-            if (message.serverContent?.turnComplete) {
-              const { input, output } = transcriptBufferRef.current;
-              if (input.trim()) {
-                const inputMsg: TranslationMessage = { id: Date.now().toString(), sender: 'user', text: input, timestamp: new Date(), language: myLang.code };
-                setTranscript(prev => [inputMsg, ...prev]);
-
-                // Save to database
-                if (currentSessionId) {
-                  try {
-                    await addMessage({
-                      sessionId: currentSessionId,
-                      originalText: input,
-                      sourceLanguage: myLang.code,
-                      messageType: 'speech',
-                    });
-                  } catch (e) {
-                    console.error('Failed to save transcript:', e);
-                  }
-                }
-              }
-              if (output.trim()) {
-                const outputMsg: TranslationMessage = { id: Date.now().toString() + 'a', sender: 'agent', text: output, timestamp: new Date(), language: theirLang.code };
-                setTranscript(prev => [outputMsg, ...prev]);
-
-                // Save translation to database
-                if (currentSessionId) {
-                  try {
-                    await addMessage({
-                      sessionId: currentSessionId,
-                      originalText: output,
-                      sourceLanguage: theirLang.code,
-                      messageType: 'translation',
-                    });
-                  } catch (e) {
-                    console.error('Failed to save translation:', e);
-                  }
-                }
-              }
-              transcriptBufferRef.current = { input: '', output: '' };
-            }
-
-            if (message.serverContent?.interrupted) {
-              sourcesRef.current.forEach(s => { try { s.stop(); } catch(e) {} });
-              sourcesRef.current.clear();
-              nextStartTimeRef.current = 0;
-            }
-          },
+          onmessage: handleGeminiMessage,
           onerror: (e) => {
-            setError('Bridge Error: ' + (e as any).message);
-            stopAll();
+            console.error('Gemini error:', e);
+            // Attempt reconnection instead of stopping
+            reconnectGemini();
           },
-          onclose: () => stopAll(),
+          onclose: () => {
+            // Attempt reconnection instead of stopping
+            if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
+              reconnectGemini();
+            } else {
+              stopAll();
+            }
+          },
         },
         config: {
           responseModalities: [Modality.AUDIO],
@@ -286,6 +487,7 @@ const TRAVoicesPage: React.FC = () => {
     } catch (err: any) {
       setError(err.message);
       setIsConnecting(false);
+      setConnectionStatus('disconnected');
       stopAll();
     }
   };
@@ -548,6 +750,29 @@ const TRAVoicesPage: React.FC = () => {
                         );
                       })
                     )}
+                  </div>
+                </div>
+              )}
+
+              {/* Usage Warning */}
+              {usageWarning && (
+                <div
+                  className="p-4 rounded-xl"
+                  style={{ background: 'rgba(224, 180, 76, 0.1)', border: '1px solid #e0b44c' }}
+                >
+                  <p className="text-sm font-medium" style={{ color: '#b08930' }}>{usageWarning}</p>
+                </div>
+              )}
+
+              {/* Connection Status */}
+              {connectionStatus === 'reconnecting' && (
+                <div
+                  className="p-4 rounded-xl"
+                  style={{ background: 'rgba(224, 180, 76, 0.1)', border: '1px solid #e0b44c' }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" style={{ color: '#b08930' }} />
+                    <p className="text-sm font-medium" style={{ color: '#b08930' }}>Reconnecting...</p>
                   </div>
                 </div>
               )}

@@ -1,12 +1,12 @@
 import { mutation, internalMutation } from "../_generated/server";
 import { v } from "convex/values";
-import { getCurrentUserOrNull, hasExceededMinutes, getTierLimits } from "../lib/utils";
-import { canUserAccessRoom } from "../lib/permissions";
+import { getCurrentUser, getCurrentUserOrNull, hasExceededMinutes, getTierLimits } from "../lib/utils";
+import { canUserAccessRoom, checkRateLimit, RATE_LIMITS, RateLimitError } from "../lib/permissions";
 import { internal } from "../_generated/api";
 
 /**
  * Start a new session in a room
- * Works for guests in demo mode
+ * Requires authentication — guests are blocked
  */
 export const start = mutation({
   args: {
@@ -14,35 +14,60 @@ export const start = mutation({
     recordingEnabled: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUserOrNull(ctx);
+    // Require authentication — no guest access
+    const user = await getCurrentUser(ctx);
 
-    // For authenticated users, check permissions
-    if (user) {
-      const canAccess = await canUserAccessRoom(ctx, user._id, args.roomId, "admin");
-      if (!canAccess) {
-        // Allow anyway in demo mode - just warn
-        console.log("User doesn't have admin access, but allowing in demo mode");
-      }
+    // Rate limit session starts
+    const userTier = user.subscriptionTier ?? "free";
+    const rateLimitConfig = RATE_LIMITS[userTier] ?? RATE_LIMITS.free;
+    const rateCheck = checkRateLimit(`session:${user._id}`, rateLimitConfig);
+    if (!rateCheck.allowed) {
+      throw new RateLimitError(rateCheck.resetAt);
+    }
 
-      // Check if user has exceeded their minutes
-      const userTier = user.subscriptionTier ?? "free";
-      if (hasExceededMinutes(user)) {
-        const limits = getTierLimits(userTier);
-        throw new Error(
-          `You've used all ${limits.minutesPerMonth} minutes for this month. Upgrade your plan for more.`
-        );
+    // Check if user has exceeded their minutes
+    if (hasExceededMinutes(user)) {
+      const limits = getTierLimits(userTier);
+      throw new Error(
+        `You've used all ${limits.minutesPerMonth} minutes for this month. Upgrade your plan for more.`
+      );
+    }
+
+    // Concurrent session limit: max 1 active session per user
+    // End any existing active session before starting a new one
+    const existingUserSessions = await ctx.db
+      .query("sessions")
+      .withIndex("by_host", (q) => q.eq("hostUserId", user._id))
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .collect();
+
+    const now = Date.now();
+    for (const oldSession of existingUserSessions) {
+      const durationMinutes = Math.round((now - oldSession.startedAt) / 60000);
+      await ctx.db.patch(oldSession._id, {
+        status: "ended",
+        endedAt: now,
+        durationMinutes,
+      });
+      // Track minutes for the ended session
+      try {
+        await ctx.runMutation(internal.users.mutations.addMinutesUsed, {
+          userId: user._id,
+          minutes: durationMinutes,
+        });
+      } catch (e) {
+        // Ignore if user not found
       }
     }
 
-    // Check for existing active session
-    const existingSession = await ctx.db
+    // Check for existing active session in this room (from another user)
+    const existingRoomSession = await ctx.db
       .query("sessions")
       .withIndex("by_room_active", (q) => q.eq("roomId", args.roomId).eq("status", "active"))
       .first();
 
-    if (existingSession) {
-      // Return existing session instead of error for demo mode
-      return { sessionId: existingSession._id };
+    if (existingRoomSession) {
+      return { sessionId: existingRoomSession._id };
     }
 
     // Get current participant count
@@ -52,43 +77,39 @@ export const start = mutation({
       .filter((q) => q.eq(q.field("isOnline"), true))
       .collect();
 
-    const now = Date.now();
-
-    // Create session - use user ID if authenticated, otherwise undefined
+    // Create session
     const sessionId = await ctx.db.insert("sessions", {
       roomId: args.roomId,
-      hostUserId: user?._id,
+      hostUserId: user._id,
       startedAt: now,
       participantCount: Math.max(participants.length, 1),
       status: "active",
       recordingEnabled: args.recordingEnabled ?? false,
     });
 
-    // Update analytics only for authenticated users
-    if (user) {
-      const todayDate = new Date().toISOString().split("T")[0];
-      const existingAnalytics = await ctx.db
-        .query("analytics")
-        .withIndex("by_user_date", (q) => q.eq("userId", user._id).eq("date", todayDate))
-        .unique();
+    // Update analytics
+    const todayDate = new Date().toISOString().split("T")[0];
+    const existingAnalytics = await ctx.db
+      .query("analytics")
+      .withIndex("by_user_date", (q) => q.eq("userId", user._id).eq("date", todayDate))
+      .unique();
 
-      if (existingAnalytics) {
-        await ctx.db.patch(existingAnalytics._id, {
-          sessionsStarted: existingAnalytics.sessionsStarted + 1,
-          updatedAt: now,
-        });
-      } else {
-        await ctx.db.insert("analytics", {
-          userId: user._id,
-          date: todayDate,
-          minutesUsed: 0,
-          sessionsStarted: 1,
-          messagesTranslated: 0,
-          roomsCreated: 0,
-          languagesUsed: [],
-          updatedAt: now,
-        });
-      }
+    if (existingAnalytics) {
+      await ctx.db.patch(existingAnalytics._id, {
+        sessionsStarted: existingAnalytics.sessionsStarted + 1,
+        updatedAt: now,
+      });
+    } else {
+      await ctx.db.insert("analytics", {
+        userId: user._id,
+        date: todayDate,
+        minutesUsed: 0,
+        sessionsStarted: 1,
+        messagesTranslated: 0,
+        roomsCreated: 0,
+        languagesUsed: [],
+        updatedAt: now,
+      });
     }
 
     return { sessionId };
@@ -122,8 +143,8 @@ export const end = mutation({
       durationMinutes,
     });
 
-    // Update host's minutes used (only if it's a real user ID)
-    if (user && session.hostUserId === user._id) {
+    // Update host's minutes used
+    if (session.hostUserId) {
       try {
         await ctx.runMutation(internal.users.mutations.addMinutesUsed, {
           userId: session.hostUserId,
@@ -200,6 +221,51 @@ export const updateParticipantCount = mutation({
     await ctx.db.patch(args.sessionId, {
       participantCount: participants.length,
     });
+  },
+});
+
+/**
+ * Clean up stale sessions (cron job)
+ * Ends sessions that have been active for more than 2 hours without update
+ */
+export const cleanupStaleSessions = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
+
+    const staleSessions = await ctx.db
+      .query("sessions")
+      .withIndex("by_status", (q) => q.eq("status", "active"))
+      .filter((q) => q.lt(q.field("startedAt"), twoHoursAgo))
+      .collect();
+
+    const now = Date.now();
+
+    for (const session of staleSessions) {
+      const durationMinutes = Math.round((now - session.startedAt) / 60000);
+
+      await ctx.db.patch(session._id, {
+        status: "ended",
+        endedAt: now,
+        durationMinutes,
+      });
+
+      // Track minutes for the session host
+      if (session.hostUserId) {
+        try {
+          await ctx.runMutation(internal.users.mutations.addMinutesUsed, {
+            userId: session.hostUserId,
+            minutes: durationMinutes,
+          });
+        } catch (e) {
+          // Ignore if user not found
+        }
+      }
+    }
+
+    if (staleSessions.length > 0) {
+      console.log(`[Cron] Cleaned up ${staleSessions.length} stale sessions`);
+    }
   },
 });
 
