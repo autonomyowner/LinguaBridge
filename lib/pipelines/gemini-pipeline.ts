@@ -104,9 +104,7 @@ export class GeminiPipeline implements TranslationPipeline {
     // Use ISO 639-1 short code for Gemini (e.g. "es" not "es-ES")
     const outputLangCode = targetLanguage.code.split('-')[0];
 
-    const speechConfig: any = {
-      languageCode: outputLangCode,
-    };
+    const speechConfig: any = {};
     if (this.config.geminiVoice) {
       speechConfig.voiceConfig = {
         prebuiltVoiceConfig: { voiceName: this.config.geminiVoice },
@@ -158,14 +156,14 @@ export class GeminiPipeline implements TranslationPipeline {
 
             if (this.isStopping) return;
 
-            // Code 1000 = normal close, 1001 = going away — don't reconnect for server rejections
+            // Code 1000 = normal close, 1007 = policy violation — don't reconnect for server rejections
             // Code 1006 = abnormal (network), 1011 = server error — worth retrying
-            if (e.code === 1000 && e.wasClean) {
-              // Server intentionally closed — likely bad config/model/key
-              console.error('[GeminiPipeline] Server closed connection cleanly. May indicate invalid model or config.');
+            if ((e.code === 1000 || e.code === 1007) && e.wasClean) {
+              // Server intentionally closed — likely bad config/model/key/language
+              console.error('[GeminiPipeline] Server rejected connection. Code:', e.code, 'Reason:', e.reason);
               this.errorCb?.({
                 code: 'gemini_rejected',
-                message: 'Gemini rejected the connection. Check API key and model availability.',
+                message: e.reason || 'Gemini rejected the connection. Check configuration.',
                 recoverable: false,
               });
               this.statusChangeCb?.('disconnected');
