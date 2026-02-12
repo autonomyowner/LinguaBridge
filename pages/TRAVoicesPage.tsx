@@ -1,24 +1,24 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai';
-import { Room, RoomEvent, RemoteParticipant, RemoteTrack, LocalAudioTrack } from 'livekit-client';
+import { Room, RoomEvent, RemoteParticipant, RemoteTrack, LocalAudioTrack, RoomOptions, ConnectionState, Track } from 'livekit-client';
 import { useAction, useMutation, useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { SUPPORTED_LANGUAGES, TranslationMessage, Language } from '../types';
-import { decode, decodeAudioData, createBlob } from '../audioUtils';
+import { decode } from '../audioUtils';
 import Header from '../components/Header';
 import { useAuth } from '../providers/AuthContext';
 import { useLanguage } from '../providers/LanguageContext';
 import { Id } from '../convex/_generated/dataModel';
+import type { PipelineMode } from '../lib/pipelines/types';
+import type { TranslationPipeline, TranscriptEvent, AudioOutputEvent, PipelineError } from '../lib/pipelines/types';
+import { StandardPipeline } from '../lib/pipelines/standard-pipeline';
+import { GeminiPipeline } from '../lib/pipelines/gemini-pipeline';
 
-// Gemini Model Config
-const MODEL_NAME = 'gemini-2.5-flash-native-audio-preview-09-2025';
+// Shared constants
 const INPUT_SAMPLE_RATE = 16000;
 const OUTPUT_SAMPLE_RATE = 24000;
 const MAX_AUDIO_QUEUE_DEPTH = 10;
-const MAX_RECONNECT_ATTEMPTS = 5;
-const RECONNECT_BASE_DELAY = 1000; // 1s
-const RECONNECT_MAX_DELAY = 30000; // 30s
-const USAGE_CHECK_INTERVAL = 60000; // Check usage every 60s
+const USAGE_CHECK_INTERVAL = 60000;
+const TRACK_PUBLISH_DELAY = 500;
 
 type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
 
@@ -31,8 +31,8 @@ const TRAVoicesPage: React.FC = () => {
   const [isActive, setIsActive] = useState(false);
   const [roomName, setRoomName] = useState('GlobalLobby');
   const [userName, setUserName] = useState('');
-  const [myLang, setMyLang] = useState<Language>(SUPPORTED_LANGUAGES[0]); // English
-  const [theirLang, setTheirLang] = useState<Language>(SUPPORTED_LANGUAGES[1]); // Spanish
+  const [myLang, setMyLang] = useState<Language>(SUPPORTED_LANGUAGES[0]);
+  const [theirLang, setTheirLang] = useState<Language>(SUPPORTED_LANGUAGES[1]);
   const [transcript, setTranscript] = useState<TranslationMessage[]>([]);
   const [participants, setParticipants] = useState<RemoteParticipant[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -40,16 +40,37 @@ const TRAVoicesPage: React.FC = () => {
   const [currentSessionId, setCurrentSessionId] = useState<Id<"sessions"> | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [usageWarning, setUsageWarning] = useState<string | null>(null);
+  const [availableVoices, setAvailableVoices] = useState<Array<{ id: string; name: string; description?: string }>>([]);
+  const [selectedVoiceId, setSelectedVoiceId] = useState<string | null>(null);
+  const [voicesLoading, setVoicesLoading] = useState(false);
+  const [pipelineMode, setPipelineMode] = useState<PipelineMode>('standard');
 
   // --- Convex Hooks ---
   const generateLiveKitToken = useAction(api.rooms.actions.generateLiveKitToken);
+  const getDeepgramApiKey = useAction(api.rooms.actions.getDeepgramApiKey);
+  const getOpenRouterApiKey = useAction(api.rooms.actions.getOpenRouterApiKey);
   const getGeminiApiKey = useAction(api.rooms.actions.getGeminiApiKey);
+  const getCartesiaApiKey = useAction(api.voices.actions.getCartesiaApiKey);
+  const getDefaultCartesiaVoiceId = useAction(api.voices.actions.getDefaultCartesiaVoiceId);
+  const listCartesiaVoices = useAction(api.voices.actions.listVoices);
   const findOrCreateRoom = useMutation(api.rooms.mutations.findOrCreate);
   const startSession = useMutation(api.sessions.mutations.start);
   const endSession = useMutation(api.sessions.mutations.end);
   const addMessage = useMutation(api.transcripts.mutations.addMessage);
   const userSettings = useQuery(api.users.queries.getSettings, {});
   const subscription = useQuery(api.subscriptions.queries.getCurrent, {});
+  const voiceClone = useQuery(api.voices.queries.getMyVoiceClone);
+  const ensureUser = useMutation(api.debug.ensureUserByEmail);
+
+  // Ensure user exists in app database
+  const [userEnsured, setUserEnsured] = React.useState(false);
+  React.useEffect(() => {
+    if (user?.email && !userEnsured) {
+      ensureUser({ email: user.email, name: user.name })
+        .then(() => setUserEnsured(true))
+        .catch(console.error);
+    }
+  }, [user?.email, userEnsured, ensureUser]);
 
   // Set default name from user
   React.useEffect(() => {
@@ -70,61 +91,112 @@ const TRAVoicesPage: React.FC = () => {
     }
   }, [userSettings]);
 
-  // --- Core References ---
+  // Fetch available voices (only for standard mode, when no voice clone)
+  React.useEffect(() => {
+    if (!isAuthenticated || !userEnsured) return;
+    if (voiceClone) return;
+    setVoicesLoading(true);
+    const userEmail = user?.email || undefined;
+    listCartesiaVoices({ userEmail })
+      .then((result) => {
+        setAvailableVoices(result.voices);
+        if (!selectedVoiceId && result.voices.length > 0) {
+          setSelectedVoiceId(result.voices[0].id);
+        }
+      })
+      .catch((e) => console.error('Failed to load voices:', e))
+      .finally(() => setVoicesLoading(false));
+  }, [isAuthenticated, userEnsured, voiceClone]);
+
+  // --- Core References (shared infrastructure) ---
   const lkRoomRef = useRef<Room | null>(null);
   const audioContextInRef = useRef<AudioContext | null>(null);
   const audioContextOutRef = useRef<AudioContext | null>(null);
   const destNodeRef = useRef<MediaStreamAudioDestinationNode | null>(null);
-  const sessionRef = useRef<any>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const nextStartTimeRef = useRef<number>(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const audioQueueDepthRef = useRef<number>(0);
-  const transcriptBufferRef = useRef({ input: '', output: '' });
   const audioElementsRef = useRef<Set<HTMLAudioElement>>(new Set());
-  const reconnectAttemptsRef = useRef<number>(0);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const usageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionStartTimeRef = useRef<number>(0);
-  const geminiApiKeyRef = useRef<string | null>(null);
+  const processorNodeRef = useRef<ScriptProcessorNode | null>(null);
+  const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
+
+  // Pipeline ref
+  const pipelineRef = useRef<TranslationPipeline | null>(null);
+
+  // Shutdown guard
+  const isStoppingRef = useRef<boolean>(false);
+  const currentSessionIdRef = useRef<Id<"sessions"> | null>(null);
+  useEffect(() => { currentSessionIdRef.current = currentSessionId; }, [currentSessionId]);
+
+  // --- Play PCM audio (shared by both pipelines) ---
+  const playPcmAudio = useCallback((pcmBase64: string, sampleRate: number = OUTPUT_SAMPLE_RATE) => {
+    if (!audioContextOutRef.current || !destNodeRef.current) return;
+    if (audioQueueDepthRef.current >= MAX_AUDIO_QUEUE_DEPTH) return;
+
+    const ctx = audioContextOutRef.current;
+    const pcmBytes = decode(pcmBase64);
+    const dataInt16 = new Int16Array(pcmBytes.buffer);
+    const frameCount = dataInt16.length;
+    const buffer = ctx.createBuffer(1, frameCount, sampleRate);
+    const channelData = buffer.getChannelData(0);
+    for (let i = 0; i < frameCount; i++) {
+      channelData[i] = dataInt16[i] / 32768.0;
+    }
+
+    const sourceNode = ctx.createBufferSource();
+    sourceNode.buffer = buffer;
+    sourceNode.connect(destNodeRef.current);
+
+    nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
+    sourceNode.start(nextStartTimeRef.current);
+    nextStartTimeRef.current += buffer.duration;
+
+    audioQueueDepthRef.current += 1;
+    sourcesRef.current.add(sourceNode);
+    sourceNode.onended = () => {
+      sourcesRef.current.delete(sourceNode);
+      audioQueueDepthRef.current = Math.max(0, audioQueueDepthRef.current - 1);
+    };
+  }, []);
 
   const stopAll = useCallback(async () => {
+    if (isStoppingRef.current) return;
+    isStoppingRef.current = true;
+    sessionStartTimeRef.current = 0;
+
     setIsActive(false);
     setIsConnecting(false);
     setConnectionStatus('disconnected');
     setUsageWarning(null);
 
-    // Clear reconnect timer
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-    reconnectAttemptsRef.current = 0;
-
-    // Clear usage check timer
     if (usageTimerRef.current) {
       clearInterval(usageTimerRef.current);
       usageTimerRef.current = null;
     }
 
-    // End session in database
-    if (currentSessionId) {
-      try {
-        await endSession({ sessionId: currentSessionId });
-      } catch (e) {
-        console.error('Failed to end session:', e);
-      }
-      setCurrentSessionId(null);
+    // Disconnect pipeline (handles its own WS cleanup)
+    if (pipelineRef.current) {
+      pipelineRef.current.removeAllListeners();
+      pipelineRef.current.disconnect();
+      pipelineRef.current = null;
+    }
+
+    // Disconnect audio processor nodes
+    if (processorNodeRef.current) {
+      try { processorNodeRef.current.disconnect(); } catch (_) {}
+      processorNodeRef.current = null;
+    }
+    if (sourceNodeRef.current) {
+      try { sourceNodeRef.current.disconnect(); } catch (_) {}
+      sourceNodeRef.current = null;
     }
 
     if (lkRoomRef.current) {
-      lkRoomRef.current.disconnect();
+      try { lkRoomRef.current.disconnect(); } catch (_) {}
       lkRoomRef.current = null;
-    }
-
-    if (sessionRef.current) {
-      sessionRef.current.close();
-      sessionRef.current = null;
     }
 
     if (localStreamRef.current) {
@@ -134,12 +206,13 @@ const TRAVoicesPage: React.FC = () => {
 
     if (audioContextInRef.current) audioContextInRef.current.close().catch(() => {});
     if (audioContextOutRef.current) audioContextOutRef.current.close().catch(() => {});
+    audioContextInRef.current = null;
+    audioContextOutRef.current = null;
 
     sourcesRef.current.forEach(s => { try { s.stop(); } catch(e) {} });
     sourcesRef.current.clear();
     audioQueueDepthRef.current = 0;
 
-    // Clean up audio elements (fix memory leak)
     audioElementsRef.current.forEach(el => {
       el.pause();
       el.srcObject = null;
@@ -147,11 +220,21 @@ const TRAVoicesPage: React.FC = () => {
     });
     audioElementsRef.current.clear();
 
-    geminiApiKeyRef.current = null;
     setParticipants([]);
     nextStartTimeRef.current = 0;
-    sessionStartTimeRef.current = 0;
-  }, [currentSessionId, endSession]);
+
+    const sid = currentSessionIdRef.current;
+    if (sid) {
+      try {
+        await endSession({ sessionId: sid });
+      } catch (e) {
+        console.error('Failed to end session:', e);
+      }
+      setCurrentSessionId(null);
+    }
+
+    isStoppingRef.current = false;
+  }, [endSession]);
 
   // --- Mid-session usage check ---
   const checkUsageMidSession = useCallback(() => {
@@ -189,164 +272,23 @@ const TRAVoicesPage: React.FC = () => {
     }
   }, [isActive, subscription, checkUsageMidSession]);
 
-  // --- Gemini reconnection with exponential backoff ---
-  const reconnectGemini = useCallback(async () => {
-    if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
-      setError('Connection lost. Please restart the session.');
-      setConnectionStatus('disconnected');
-      stopAll();
-      return;
-    }
+  // Keep stopAll in a ref so LiveKit event handlers always call the latest version
+  const stopAllRef = useRef(stopAll);
+  useEffect(() => { stopAllRef.current = stopAll; }, [stopAll]);
 
-    reconnectAttemptsRef.current += 1;
-    const delay = Math.min(
-      RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttemptsRef.current - 1),
-      RECONNECT_MAX_DELAY
-    );
+  // Cleanup on page unload
+  useEffect(() => {
+    const handleUnload = () => { stopAllRef.current(); };
+    window.addEventListener('beforeunload', handleUnload);
+    window.addEventListener('pagehide', handleUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleUnload);
+      window.removeEventListener('pagehide', handleUnload);
+      stopAllRef.current();
+    };
+  }, []);
 
-    setConnectionStatus('reconnecting');
-    setError(`Reconnecting... (attempt ${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})`);
-
-    reconnectTimerRef.current = setTimeout(async () => {
-      try {
-        if (!geminiApiKeyRef.current || !audioContextInRef.current || !localStreamRef.current || !audioContextOutRef.current || !destNodeRef.current) {
-          stopAll();
-          return;
-        }
-
-        const ai = new GoogleGenAI({ apiKey: geminiApiKeyRef.current });
-        const systemInstruction = `
-          You are a high-fidelity real-time translator.
-          Your user speaks ${myLang.name}. You must translate their speech into ${theirLang.name}.
-          The translated audio will be broadcast to a global room.
-          Translate precisely and maintain the original tone.
-          Only output the translated speech as audio.
-        `;
-
-        const sessionPromise = ai.live.connect({
-          model: MODEL_NAME,
-          callbacks: {
-            onopen: () => {
-              const source = audioContextInRef.current!.createMediaStreamSource(localStreamRef.current!);
-              const processor = audioContextInRef.current!.createScriptProcessor(4096, 1, 1);
-
-              processor.onaudioprocess = (e) => {
-                const inputData = e.inputBuffer.getChannelData(0);
-                sessionPromise.then(session => session.sendRealtimeInput({ media: createBlob(inputData) }));
-              };
-              source.connect(processor);
-              processor.connect(audioContextInRef.current!.destination);
-
-              reconnectAttemptsRef.current = 0;
-              setConnectionStatus('connected');
-              setError(null);
-            },
-            onmessage: handleGeminiMessage,
-            onerror: (e) => {
-              console.error('Gemini reconnection error:', e);
-              reconnectGemini();
-            },
-            onclose: () => {
-              if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
-                reconnectGemini();
-              }
-            },
-          },
-          config: {
-            responseModalities: [Modality.AUDIO],
-            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
-            systemInstruction,
-            inputAudioTranscription: {},
-            outputAudioTranscription: {}
-          }
-        });
-
-        sessionRef.current = await sessionPromise;
-      } catch (err) {
-        console.error('Reconnection failed:', err);
-        reconnectGemini();
-      }
-    }, delay);
-  }, [myLang, theirLang, stopAll]);
-
-  // --- Gemini message handler (shared between connect and reconnect) ---
-  const handleGeminiMessage = useCallback(async (message: LiveServerMessage) => {
-    const base64Audio = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
-    if (base64Audio && audioContextOutRef.current && destNodeRef.current) {
-      // Audio queue depth limit — skip oldest if queue is too deep
-      if (audioQueueDepthRef.current >= MAX_AUDIO_QUEUE_DEPTH) {
-        return; // Drop this audio chunk to prevent growing delay
-      }
-
-      const ctx = audioContextOutRef.current;
-      const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, OUTPUT_SAMPLE_RATE, 1);
-
-      const sourceNode = ctx.createBufferSource();
-      sourceNode.buffer = audioBuffer;
-      sourceNode.connect(destNodeRef.current);
-
-      nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
-      sourceNode.start(nextStartTimeRef.current);
-      nextStartTimeRef.current += audioBuffer.duration;
-
-      audioQueueDepthRef.current += 1;
-      sourcesRef.current.add(sourceNode);
-      sourceNode.onended = () => {
-        sourcesRef.current.delete(sourceNode);
-        audioQueueDepthRef.current = Math.max(0, audioQueueDepthRef.current - 1);
-      };
-    }
-
-    if (message.serverContent?.inputTranscription) transcriptBufferRef.current.input += message.serverContent.inputTranscription.text;
-    if (message.serverContent?.outputTranscription) transcriptBufferRef.current.output += message.serverContent.outputTranscription.text;
-
-    if (message.serverContent?.turnComplete) {
-      const { input, output } = transcriptBufferRef.current;
-      if (input.trim()) {
-        const inputMsg: TranslationMessage = { id: Date.now().toString(), sender: 'user', text: input, timestamp: new Date(), language: myLang.code };
-        setTranscript(prev => [inputMsg, ...prev]);
-
-        if (currentSessionId) {
-          try {
-            await addMessage({
-              sessionId: currentSessionId,
-              originalText: input,
-              sourceLanguage: myLang.code,
-              messageType: 'speech',
-            });
-          } catch (e) {
-            console.error('Failed to save transcript:', e);
-          }
-        }
-      }
-      if (output.trim()) {
-        const outputMsg: TranslationMessage = { id: Date.now().toString() + 'a', sender: 'agent', text: output, timestamp: new Date(), language: theirLang.code };
-        setTranscript(prev => [outputMsg, ...prev]);
-
-        if (currentSessionId) {
-          try {
-            await addMessage({
-              sessionId: currentSessionId,
-              originalText: output,
-              sourceLanguage: theirLang.code,
-              messageType: 'translation',
-            });
-          } catch (e) {
-            console.error('Failed to save translation:', e);
-          }
-        }
-      }
-      transcriptBufferRef.current = { input: '', output: '' };
-    }
-
-    if (message.serverContent?.interrupted) {
-      sourcesRef.current.forEach(s => { try { s.stop(); } catch(e) {} });
-      sourcesRef.current.clear();
-      audioQueueDepthRef.current = 0;
-      nextStartTimeRef.current = 0;
-    }
-  }, [myLang, theirLang, currentSessionId, addMessage]);
-
+  // --- Connect Bridge (unified for both pipelines) ---
   const connectBridge = async () => {
     if (!isAuthenticated) {
       setError(t('translate.signInToStart'));
@@ -354,14 +296,52 @@ const TRAVoicesPage: React.FC = () => {
     }
 
     if (isActive || isConnecting) return;
+    isStoppingRef.current = false;
     setIsConnecting(true);
     setConnectionStatus('connecting');
     setError(null);
 
     try {
-      // Fetch Gemini API key from server (never exposed in frontend bundle)
-      const { apiKey: geminiApiKey } = await getGeminiApiKey({});
-      geminiApiKeyRef.current = geminiApiKey;
+      const userEmail = user?.email || undefined;
+
+      // Fetch API keys based on pipeline mode
+      let voiceId: string | undefined;
+      let apiKeys: { deepgram?: string; openRouter?: string; cartesia?: string; gemini?: string };
+
+      if (pipelineMode === 'standard') {
+        const hasClone = voiceClone && voiceClone.cartesiaVoiceId;
+        const needsDefaultVoice = !hasClone && !selectedVoiceId;
+        const [deepgramResult, openRouterResult, cartesiaResult, defaultVoiceResult] = await Promise.all([
+          getDeepgramApiKey({ userEmail }),
+          getOpenRouterApiKey({ userEmail }),
+          getCartesiaApiKey({ userEmail }),
+          needsDefaultVoice ? getDefaultCartesiaVoiceId({ userEmail }) : Promise.resolve({ voiceId: null }),
+        ]);
+
+        apiKeys = {
+          deepgram: deepgramResult.apiKey,
+          openRouter: openRouterResult.apiKey,
+          cartesia: cartesiaResult.apiKey,
+        };
+
+        // Configure voice: clone > user-selected preset > API default
+        if (hasClone) {
+          voiceId = voiceClone!.cartesiaVoiceId;
+          console.log('[voice-select] Using CLONED voice:', voiceId);
+        } else if (selectedVoiceId) {
+          voiceId = selectedVoiceId;
+          console.log('[voice-select] Using SELECTED preset voice:', voiceId);
+        } else if (defaultVoiceResult.voiceId) {
+          voiceId = defaultVoiceResult.voiceId;
+          console.log('[voice-select] Using DEFAULT voice:', voiceId);
+        } else {
+          throw new Error('No voice available. Please select a voice or set up voice cloning.');
+        }
+      } else {
+        // Gemini mode — only need Gemini API key
+        const geminiResult = await getGeminiApiKey({ userEmail });
+        apiKeys = { gemini: geminiResult.apiKey };
+      }
 
       // Find existing room or create new one
       const result = await findOrCreateRoom({
@@ -374,34 +354,55 @@ const TRAVoicesPage: React.FC = () => {
       const roomId = result.roomId;
       setCurrentRoomId(roomId);
 
-      // Generate LiveKit token from backend (SECURE - no credentials exposed)
-      const { token, url } = await generateLiveKitToken({ roomId });
+      // Generate LiveKit token
+      const { token, url } = await generateLiveKitToken({ roomId, userEmail });
 
-      // Start session (server enforces auth + concurrent session limit)
-      const { sessionId } = await startSession({ roomId });
+      // Start session
+      const { sessionId } = await startSession({ roomId, userEmail });
       setCurrentSessionId(sessionId);
       sessionStartTimeRef.current = Date.now();
 
       // Setup audio contexts
       audioContextInRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: INPUT_SAMPLE_RATE });
       audioContextOutRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: OUTPUT_SAMPLE_RATE });
+      await audioContextInRef.current.resume();
+      await audioContextOutRef.current.resume();
       destNodeRef.current = audioContextOutRef.current.createMediaStreamDestination();
+      console.log('AudioContexts ready. In:', audioContextInRef.current.state, 'Out:', audioContextOutRef.current.state);
 
       // Get microphone access
       localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-      // Connect to LiveKit (before Gemini, to avoid race condition)
-      const room = new Room();
+      // Connect to LiveKit
+      const roomOptions: RoomOptions = {
+        adaptiveStream: true,
+        dynacast: true,
+        disconnectOnPageLeave: false,
+      };
+      const room = new Room(roomOptions);
       lkRoomRef.current = room;
 
-      room.on(RoomEvent.ParticipantConnected, () => setParticipants(Array.from(room.remoteParticipants.values())));
-      room.on(RoomEvent.ParticipantDisconnected, () => setParticipants(Array.from(room.remoteParticipants.values())));
+      const syncParticipants = () => {
+        if (room.state === ConnectionState.Connected) {
+          setParticipants(Array.from(room.remoteParticipants.values()));
+        }
+      };
 
-      // Track audio elements for cleanup (fix memory leak)
+      room.on(RoomEvent.ParticipantConnected, syncParticipants);
+      room.on(RoomEvent.ParticipantDisconnected, syncParticipants);
+      room.on(RoomEvent.TrackPublished, syncParticipants);
+
       room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
+        console.log('Track subscribed:', track.kind, track.sid);
         const el = track.attach();
+        el.autoplay = true;
+        el.setAttribute('playsinline', 'true');
         document.body.appendChild(el);
         audioElementsRef.current.add(el as HTMLAudioElement);
+        el.play().catch((e) => {
+          console.warn('Autoplay blocked, will retry on next interaction:', e.message);
+        });
+        syncParticipants();
       });
       room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
         const elements = track.detach();
@@ -411,81 +412,161 @@ const TRAVoicesPage: React.FC = () => {
         });
       });
 
-      // LiveKit connection state handlers
+      room.on(RoomEvent.AudioPlaybackStatusChanged, () => {
+        if (!room.canPlaybackAudio) {
+          console.warn('Audio playback blocked by browser, calling startAudio()');
+          room.startAudio().catch((e) => console.error('startAudio failed:', e));
+        }
+      });
+
       room.on(RoomEvent.Disconnected, () => {
-        setConnectionStatus('disconnected');
-        setError('Room connection lost. Please restart the session.');
-        stopAll();
+        console.warn('LiveKit room disconnected. isStoppingRef:', isStoppingRef.current);
+        if (isStoppingRef.current) return;
+        stopAllRef.current();
+        setError('Session ended. Tap "Start Translation" to reconnect.');
       });
       room.on(RoomEvent.Reconnecting, () => {
+        console.log('LiveKit reconnecting...');
         setConnectionStatus('reconnecting');
       });
       room.on(RoomEvent.Reconnected, () => {
+        console.log('LiveKit reconnected');
         setConnectionStatus('connected');
         setError(null);
+        syncParticipants();
       });
 
       await room.connect(url, token);
+      console.log('LiveKit connected to room:', room.name, 'state:', room.state,
+        'remoteParticipants:', room.remoteParticipants.size);
+
+      if (!room.canPlaybackAudio) {
+        await room.startAudio().catch((e) => console.warn('startAudio:', e));
+      }
+
+      syncParticipants();
+      setTimeout(syncParticipants, 1500);
+      setTimeout(syncParticipants, 5000);
+
+      await new Promise(resolve => setTimeout(resolve, TRACK_PUBLISH_DELAY));
+
+      if (room.state !== ConnectionState.Connected) {
+        throw new Error('LiveKit room disconnected before track could be published');
+      }
 
       // Publish translated audio track
       const translatedTrack = new LocalAudioTrack(destNodeRef.current.stream.getAudioTracks()[0]);
-      await room.localParticipant.publishTrack(translatedTrack);
+      try {
+        await room.localParticipant.publishTrack(translatedTrack, {
+          name: 'translated-audio',
+          source: Track.Source.Microphone,
+        });
+        console.log('Track published successfully');
+      } catch (pubErr: any) {
+        console.error('Track publish failed, retrying after delay:', pubErr.message);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        if (room.state === ConnectionState.Connected) {
+          await room.localParticipant.publishTrack(translatedTrack, {
+            name: 'translated-audio',
+            source: Track.Source.Microphone,
+          });
+          console.log('Track published on retry');
+        } else {
+          throw new Error('LiveKit room disconnected, cannot publish track');
+        }
+      }
 
-      // Connect to Gemini AI (LiveKit is already stable)
-      const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+      // --- Create and connect pipeline ---
+      const pipeline = pipelineMode === 'standard'
+        ? new StandardPipeline()
+        : new GeminiPipeline();
 
-      const systemInstruction = `
-        You are a high-fidelity real-time translator.
-        Your user speaks ${myLang.name}. You must translate their speech into ${theirLang.name}.
-        The translated audio will be broadcast to a global room.
-        Translate precisely and maintain the original tone.
-        Only output the translated speech as audio.
-      `;
+      pipelineRef.current = pipeline;
 
-      const sessionPromise = ai.live.connect({
-        model: MODEL_NAME,
-        callbacks: {
-          onopen: () => {
-            const source = audioContextInRef.current!.createMediaStreamSource(localStreamRef.current!);
-            const processor = audioContextInRef.current!.createScriptProcessor(4096, 1, 1);
+      // Wire pipeline callbacks
+      pipeline.onTranscript((event: TranscriptEvent) => {
+        const msg: TranslationMessage = {
+          id: Date.now().toString() + (event.type === 'output' ? 'a' : ''),
+          sender: event.type === 'input' ? 'user' : 'agent',
+          text: event.text,
+          timestamp: new Date(),
+          language: event.language,
+        };
+        setTranscript(prev => [msg, ...prev]);
 
-            processor.onaudioprocess = (e) => {
-              const inputData = e.inputBuffer.getChannelData(0);
-              sessionPromise.then(session => session.sendRealtimeInput({ media: createBlob(inputData) }));
-            };
-            source.connect(processor);
-            processor.connect(audioContextInRef.current!.destination);
-
-            setIsActive(true);
-            setIsConnecting(false);
-            setConnectionStatus('connected');
-          },
-          onmessage: handleGeminiMessage,
-          onerror: (e) => {
-            console.error('Gemini error:', e);
-            // Attempt reconnection instead of stopping
-            reconnectGemini();
-          },
-          onclose: () => {
-            // Attempt reconnection instead of stopping
-            if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
-              reconnectGemini();
-            } else {
-              stopAll();
-            }
-          },
-        },
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
-          systemInstruction,
-          inputAudioTranscription: {},
-          outputAudioTranscription: {}
+        // Save to Convex
+        const sid = currentSessionIdRef.current;
+        if (sid) {
+          addMessage({
+            sessionId: sid,
+            originalText: event.text,
+            sourceLanguage: event.language,
+            messageType: event.type === 'input' ? 'speech' : 'translation',
+            userEmail: user?.email || undefined,
+          }).catch(e => console.error('Failed to save transcript:', e));
         }
       });
-      sessionRef.current = await sessionPromise;
+
+      pipeline.onAudioOutput((event: AudioOutputEvent) => {
+        playPcmAudio(event.pcmBase64, event.sampleRate);
+      });
+
+      pipeline.onStatusChange((status: string) => {
+        if (status === 'connected') {
+          setConnectionStatus('connected');
+          setError(null);
+        } else if (status === 'reconnecting') {
+          setConnectionStatus('reconnecting');
+        } else if (status === 'disconnected') {
+          setConnectionStatus('disconnected');
+        }
+      });
+
+      pipeline.onError((err: PipelineError) => {
+        if (err.recoverable) {
+          setError(err.message);
+        } else {
+          setError(err.message);
+          stopAllRef.current();
+        }
+      });
+
+      // Connect pipeline
+      await pipeline.connect({
+        sourceLanguage: { code: myLang.code, name: myLang.name },
+        targetLanguage: { code: theirLang.code, name: theirLang.name },
+        apiKeys,
+        voiceId,
+        geminiVoice: pipelineMode === 'gemini' ? 'Aoede' : undefined,
+      });
+
+      // Wire mic to pipeline's sendAudio via ScriptProcessor
+      const source = audioContextInRef.current.createMediaStreamSource(localStreamRef.current);
+      const processor = audioContextInRef.current.createScriptProcessor(4096, 1, 1);
+
+      processor.onaudioprocess = (e) => {
+        if (isStoppingRef.current || !pipelineRef.current) return;
+        const inputData = e.inputBuffer.getChannelData(0);
+        pipelineRef.current.sendAudio(inputData);
+      };
+
+      source.connect(processor);
+      processor.connect(audioContextInRef.current.destination);
+      sourceNodeRef.current = source;
+      processorNodeRef.current = processor;
+
+      setIsActive(true);
+      setIsConnecting(false);
+      setConnectionStatus('connected');
     } catch (err: any) {
-      setError(err.message);
+      console.error('connectBridge error:', err);
+      let msg = err?.data || err?.message || String(err);
+      if (typeof msg === 'object') msg = JSON.stringify(msg);
+      if (msg.includes('Server Error') || msg.includes('Internal')) {
+        setError('Server error starting session. Please try again in a moment.');
+      } else {
+        setError(msg);
+      }
       setIsConnecting(false);
       setConnectionStatus('disconnected');
       stopAll();
@@ -587,7 +668,116 @@ const TRAVoicesPage: React.FC = () => {
                 </button>
               </div>
 
-              {/* Quick Start Guide - Only show when not active */}
+              {/* Pipeline Toggle */}
+              <div className="matcha-card p-5">
+                <label className="matcha-label mb-3 block">Translation Engine</label>
+                <div
+                  className="grid grid-cols-2 gap-0 rounded-xl overflow-hidden"
+                  style={{ border: '1px solid var(--border-soft)' }}
+                >
+                  <button
+                    onClick={() => !isActive && setPipelineMode('standard')}
+                    disabled={isActive}
+                    className="py-3 px-3 text-center transition-all"
+                    style={{
+                      background: pipelineMode === 'standard'
+                        ? 'linear-gradient(135deg, var(--matcha-500), var(--matcha-600))'
+                        : 'var(--bg-elevated)',
+                      color: pipelineMode === 'standard' ? 'var(--text-inverse)' : 'var(--text-secondary)',
+                      opacity: isActive ? 0.6 : 1,
+                      cursor: isActive ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    <p className="text-sm font-semibold">Standard</p>
+                    <p className="text-xs mt-0.5" style={{ opacity: 0.8 }}>Deepgram + GPT + Cartesia</p>
+                  </button>
+                  <button
+                    onClick={() => !isActive && setPipelineMode('gemini')}
+                    disabled={isActive}
+                    className="py-3 px-3 text-center transition-all"
+                    style={{
+                      background: pipelineMode === 'gemini'
+                        ? 'linear-gradient(135deg, var(--matcha-500), var(--matcha-600))'
+                        : 'var(--bg-elevated)',
+                      color: pipelineMode === 'gemini' ? 'var(--text-inverse)' : 'var(--text-secondary)',
+                      opacity: isActive ? 0.6 : 1,
+                      cursor: isActive ? 'not-allowed' : 'pointer',
+                      borderLeft: '1px solid var(--border-soft)',
+                    }}
+                  >
+                    <p className="text-sm font-semibold">Gemini Live</p>
+                    <p className="text-xs mt-0.5" style={{ opacity: 0.8 }}>End-to-end speech AI</p>
+                  </button>
+                </div>
+                {isActive && (
+                  <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+                    Cannot switch engines during an active session
+                  </p>
+                )}
+              </div>
+
+              {/* Voice Clone Banner (Standard mode only) */}
+              {pipelineMode === 'standard' && !voiceClone && !isActive && (
+                <div
+                  className="matcha-card p-4 animate-fade-in"
+                  style={{ background: 'linear-gradient(135deg, var(--matcha-50), rgba(104, 166, 125, 0.15))', border: '1px solid var(--matcha-200)' }}
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+                      style={{ background: 'var(--matcha-100)' }}
+                    >
+                      <svg className="w-5 h-5" style={{ color: 'var(--matcha-600)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold mb-1" style={{ color: 'var(--matcha-700)' }}>
+                        Sound like yourself
+                      </p>
+                      <p className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>
+                        Set up voice cloning so your translations sound like you, not a robot.
+                      </p>
+                      <a
+                        href="/voice-setup"
+                        className="text-xs font-semibold"
+                        style={{ color: 'var(--matcha-600)' }}
+                      >
+                        Set up voice clone →
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Gemini Voice Info (Gemini mode only) */}
+              {pipelineMode === 'gemini' && !isActive && (
+                <div
+                  className="matcha-card p-4 animate-fade-in"
+                  style={{ background: 'linear-gradient(135deg, var(--matcha-50), rgba(104, 166, 125, 0.15))', border: '1px solid var(--matcha-200)' }}
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+                      style={{ background: 'var(--matcha-100)' }}
+                    >
+                      <svg className="w-5 h-5" style={{ color: 'var(--matcha-600)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold mb-1" style={{ color: 'var(--matcha-700)' }}>
+                        Gemini Built-in Voice
+                      </p>
+                      <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                        Uses Gemini's native speech-to-speech AI. Lower latency, single connection. Voice cloning is not available in this mode.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Quick Start Guide */}
               {!isActive && (
                 <div className="matcha-card p-6 animate-fade-in" style={{ background: 'var(--bg-matcha-soft)' }}>
                   <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--matcha-700)' }}>{t('translate.quickStart')}</h3>
@@ -681,6 +871,51 @@ const TRAVoicesPage: React.FC = () => {
                       </div>
                     </div>
                   </div>
+
+                  {/* Voice Selection (Standard mode only) */}
+                  {pipelineMode === 'standard' && (
+                    <div className="pt-4" style={{ borderTop: '1px solid var(--border-soft)' }}>
+                      <label className="matcha-label">Translation Voice</label>
+                      {voiceClone ? (
+                        <div className="flex items-center justify-between p-3 rounded-xl" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--matcha-200)' }}>
+                          <div>
+                            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Your Cloned Voice</p>
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Created {new Date(voiceClone.createdAt).toLocaleDateString()}</p>
+                          </div>
+                          <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ background: 'var(--matcha-100)', color: 'var(--matcha-700)' }}>Active</span>
+                        </div>
+                      ) : (
+                        <>
+                          {voicesLoading ? (
+                            <div className="flex items-center gap-2 p-3 rounded-xl" style={{ background: 'var(--bg-elevated)' }}>
+                              <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" style={{ color: 'var(--text-muted)' }} />
+                              <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading voices...</span>
+                            </div>
+                          ) : availableVoices.length > 0 ? (
+                            <select
+                              value={selectedVoiceId || ''}
+                              onChange={e => setSelectedVoiceId(e.target.value)}
+                              disabled={isActive}
+                              className="matcha-select"
+                            >
+                              {availableVoices.map(v => (
+                                <option key={v.id} value={v.id}>{v.name}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>No preset voices available. Set up voice cloning instead.</p>
+                          )}
+                          <a
+                            href="/voice-setup"
+                            className="block text-xs font-semibold mt-2"
+                            style={{ color: 'var(--matcha-600)' }}
+                          >
+                            Or clone your own voice →
+                          </a>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 

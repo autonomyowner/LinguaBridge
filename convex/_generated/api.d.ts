@@ -12,6 +12,7 @@ import type * as admin_mutations from "../admin/mutations.js";
 import type * as admin_queries from "../admin/queries.js";
 import type * as analytics_mutations from "../analytics/mutations.js";
 import type * as auth from "../auth.js";
+import type * as crons from "../crons.js";
 import type * as debug from "../debug.js";
 import type * as friends_mutations from "../friends/mutations.js";
 import type * as friends_queries from "../friends/queries.js";
@@ -38,6 +39,9 @@ import type * as transcripts_mutations from "../transcripts/mutations.js";
 import type * as transcripts_queries from "../transcripts/queries.js";
 import type * as users_mutations from "../users/mutations.js";
 import type * as users_queries from "../users/queries.js";
+import type * as voices_actions from "../voices/actions.js";
+import type * as voices_mutations from "../voices/mutations.js";
+import type * as voices_queries from "../voices/queries.js";
 
 import type {
   ApiFromModules,
@@ -50,6 +54,7 @@ declare const fullApi: ApiFromModules<{
   "admin/queries": typeof admin_queries;
   "analytics/mutations": typeof analytics_mutations;
   auth: typeof auth;
+  crons: typeof crons;
   debug: typeof debug;
   "friends/mutations": typeof friends_mutations;
   "friends/queries": typeof friends_queries;
@@ -76,6 +81,9 @@ declare const fullApi: ApiFromModules<{
   "transcripts/queries": typeof transcripts_queries;
   "users/mutations": typeof users_mutations;
   "users/queries": typeof users_queries;
+  "voices/actions": typeof voices_actions;
+  "voices/mutations": typeof voices_mutations;
+  "voices/queries": typeof voices_queries;
 }>;
 
 /**

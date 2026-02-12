@@ -1,5 +1,6 @@
 import { QueryCtx, MutationCtx, ActionCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
+import { ConvexError } from "convex/values";
 import { TIER_LIMITS, SubscriptionTier } from "../schema";
 import { getAuthenticatedAppUser, getBetterAuthUser } from "../auth";
 
@@ -40,7 +41,7 @@ export async function getCurrentUser(
     if (userByEmail) return userByEmail;
   }
 
-  throw new Error("Not authenticated");
+  throw new ConvexError("Not authenticated");
 }
 
 /**

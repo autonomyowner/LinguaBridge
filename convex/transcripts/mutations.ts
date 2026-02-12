@@ -14,9 +14,10 @@ export const addMessage = mutation({
     sourceLanguage: v.string(),
     targetLanguage: v.optional(v.string()),
     messageType: v.union(v.literal("speech"), v.literal("translation"), v.literal("system")),
+    userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUser(ctx, args.userEmail);
 
     const session = await ctx.db.get(args.sessionId);
     if (!session) {

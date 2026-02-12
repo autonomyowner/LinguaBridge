@@ -1,3 +1,4 @@
+export type { PipelineMode } from './lib/pipelines/types';
 
 export interface TranslationMessage {
   id: string;
@@ -12,6 +13,13 @@ export interface Language {
   name: string;
   flag: string;
 }
+
+/** Deepgram uses slightly different BCP-47 codes for some languages */
+export const DEEPGRAM_LANGUAGE_MAP: Record<string, string> = {
+  'en-US': 'en-US', 'es-ES': 'es', 'fr-FR': 'fr', 'de-DE': 'de',
+  'it-IT': 'it', 'ja-JP': 'ja', 'ko-KR': 'ko', 'zh-CN': 'zh-CN',
+  'ar-SA': 'ar', 'pt-BR': 'pt-BR', 'hi-IN': 'hi', 'ru-RU': 'ru',
+};
 
 export const SUPPORTED_LANGUAGES: Language[] = [
   { code: 'en-US', name: 'English', flag: '🇺🇸' },

@@ -24,6 +24,19 @@ export const getCurrentOrThrow = query({
 });
 
 /**
+ * Get a user by email (for cross-origin auth fallback in actions)
+ */
+export const getByEmail = query({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .first();
+  },
+});
+
+/**
  * Get a user by their ID
  */
 export const getById = query({

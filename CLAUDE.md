@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 TRAVoices is a real-time AI voice translation SaaS. Users join translation rooms, speak in their language, and have their voice translated and broadcast to other participants in real-time.
 
-**Tech Stack:** React 19 + TypeScript + Vite (frontend), Convex (backend/database), Better-Auth (authentication), LiveKit (WebRTC audio), Google Gemini (AI translation)
+**Tech Stack:** React 19 + TypeScript + Vite (frontend), Convex (backend/database), Better-Auth (authentication), LiveKit (WebRTC audio), Deepgram Nova-2 (STT), OpenRouter/GPT-4o-mini (translation), Cartesia Sonic-2 (TTS)
 
 **Subscription Tiers:** Free (60 min/month), Pro ($19/mo, 600 min), Enterprise ($99/mo, unlimited)
 
@@ -76,6 +76,7 @@ convex/
 ├── notifications/     # queries.ts, mutations.ts (friend requests, messages, room invites)
 ├── invitations/       # queries.ts, mutations.ts (room invite links)
 ├── leads/             # queries.ts, mutations.ts (email waitlist from homepage)
+├── voices/            # actions.ts (cloneVoice, getCartesiaApiKey, getDefaultCartesiaVoiceId), mutations.ts, queries.ts
 ├── admin/             # queries.ts (admin dashboard stats, user management)
 └── debug.ts           # ensureUserByEmail, browseAllUsers, deleteAllUsersExcept
 ```
@@ -97,15 +98,37 @@ convex/
 
 **Friendship States:** `pending` → `accepted` or `rejected`. Only `accepted` friends can message each other.
 
-### Translation Flow (pages/TRAVoicesPage.tsx)
+### Translation Pipeline (pages/TRAVoicesPage.tsx)
 
+**3-stage pipeline replacing the old Gemini Live API:**
+
+```
+Mic (16kHz PCM) → Deepgram Nova-2 (STT) → OpenRouter/GPT-4o-mini (Translation) → Cartesia Sonic-2 (TTS)
+                    ~300ms                    ~100-200ms                              ~40-90ms
+```
+
+**Flow:**
 1. `findOrCreate` mutation gets/creates room
 2. `generateLiveKitToken` action creates JWT for WebRTC
-3. Google Gemini Live API for real-time speech-to-speech translation
-4. Audio: Mic → ScriptProcessor (16kHz) → Gemini → AudioBuffer (24kHz) → LiveKit publish
-5. Transcripts saved to Convex
+3. All API keys fetched in parallel: `getDeepgramApiKey`, `getOpenRouterApiKey`, `getCartesiaApiKey`
+4. Mic → AudioContext (16kHz) → ScriptProcessor → `float32ToInt16Buffer()` → Deepgram WebSocket (binary PCM frames)
+5. Deepgram returns `is_final` transcript → `translateAndSpeak()` → OpenRouter streaming SSE → translated text
+6. Translated text → Cartesia WebSocket TTS → PCM audio chunks → AudioBufferSourceNode (24kHz) → LiveKit publish
+7. Transcripts saved to Convex
 
-Languages: `SUPPORTED_LANGUAGES` array in `types.ts`
+**Key files:**
+- `audioUtils.ts` — `float32ToInt16Buffer()` for mic PCM encoding, `decode()` for Cartesia PCM decoding
+- `types.ts` — `DEEPGRAM_LANGUAGE_MAP` for BCP-47 code mapping, `SUPPORTED_LANGUAGES` array
+- `convex/rooms/actions.ts` — `getDeepgramApiKey`, `getOpenRouterApiKey` (secure key delivery)
+- `convex/voices/actions.ts` — `getCartesiaApiKey`, `getDefaultCartesiaVoiceId`, `cloneVoice`
+
+**Voice cloning:** Users can clone their voice via `VoiceSetupPage.tsx` → Cartesia clone API. Cloned voice ID stored in `voiceClones` table. If no clone, falls back to Cartesia's default public voices.
+
+**Reconnection:** Deepgram WebSocket has exponential backoff (1s→30s, max 5 attempts). Cartesia WebSocket auto-reconnects after 2s. LiveKit has built-in reconnection (don't call stopAll on first disconnect).
+
+**Mobile audio:** LiveKit's `room.startAudio()` must be called after connect to unlock audio playback on mobile browsers. `AudioPlaybackStatusChanged` event handler auto-retries.
+
+Languages: `SUPPORTED_LANGUAGES` array in `types.ts` (12 languages)
 
 ### i18n (providers/LanguageContext.tsx)
 - Languages: English (`en`), Arabic (`ar`)
@@ -130,7 +153,10 @@ VITE_CONVEX_SITE_URL=https://rosy-bullfrog-314.convex.site
 BETTER_AUTH_SECRET   # Generate: openssl rand -base64 32
 SITE_URL=https://travoices.xyz
 LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET
-GEMINI_API_KEY
+DEEPGRAM_API_KEY     # Deepgram Nova-2 STT (streaming WebSocket)
+OPENROUTER_API_KEY   # OpenRouter API (GPT-4o-mini translation)
+CARTESIA_API_KEY     # Cartesia Sonic-2 TTS + voice cloning
+GEMINI_API_KEY       # Deprecated — kept for backwards compat
 ```
 
 ## Deployment
@@ -157,6 +183,18 @@ GEMINI_API_KEY
 
 6. **Authentication uses proper auth only** - All queries/mutations use `getCurrentUser(ctx)` or `getCurrentUserOrNull(ctx)` from `convex/lib/utils.ts`. Do NOT accept email as a parameter for auth fallback (security vulnerability).
 
+7. **Use `ConvexError` not `Error` for user-facing errors** - Convex hides `throw new Error()` messages from clients (shows generic "Server Error"). Use `throw new ConvexError("message")` from `convex/values` so the actual message reaches the browser.
+
+8. **Don't use `ctx.runMutation()` inside mutations** - While technically available, calling `ctx.runMutation(internal....)` from within a mutation creates an isolated JS context with overhead. Instead, inline the logic directly using `ctx.db` operations. See `addMinutesUsedInline()` in `sessions/mutations.ts`.
+
+9. **Mobile audio playback** - Mobile browsers block autoplay. After `room.connect()`, call `room.startAudio()` to unlock audio. Listen for `RoomEvent.AudioPlaybackStatusChanged` and retry. Set `autoplay` and `playsinline` on attached audio elements.
+
+10. **LiveKit participant tracking** - `RoomEvent.ParticipantConnected` only fires for users joining AFTER you. For users already in the room, read `room.remoteParticipants` after `connect()` resolves. Use delayed syncs (1.5s, 5s) to catch late joiners.
+
+11. **Cartesia language codes** - Cartesia expects ISO-639-1 short codes (`es`, `fr`, `de`), not BCP-47 (`es-ES`). Use `langCode.split('-')[0]`.
+
+12. **Cartesia API response format** - The voices list API returns `{ data: [...] }`, not a bare array or `{ voices: [...] }`. Parse with `data.data || data.voices || []`.
+
 ## Admin Dashboard
 
 Access at `/admin` with credentials: `admin` / `focus2026`
@@ -174,3 +212,28 @@ Features:
 - Shows friend bubbles dropdown when clicked
 - Opens mini chat window for messaging
 - Hidden on `/messages`, auth pages, and admin pages
+
+## Pipeline Diagnostics
+
+Test page at `/test` (`pages/PipelineTestPage.tsx`) — tests each pipeline component individually:
+- Microphone + AudioContext
+- Deepgram API key + WebSocket connection
+- OpenRouter API key + translation test (en→es)
+- Cartesia API key + voice availability + WebSocket TTS
+- LiveKit client library
+- Full end-to-end pipeline test
+
+Run all tests or individual tests. Shows PASS/FAIL with timing and detailed error messages.
+
+## Voice Cloning
+
+**Page:** `/voice-setup` (`pages/VoiceSetupPage.tsx`)
+
+**Flow:**
+1. User records audio clip in browser (WebM/Opus)
+2. Audio converted to base64, sent to `convex/voices/actions.ts:cloneVoice`
+3. Cartesia clone API receives multipart/form-data with audio + name + language
+4. Returns a `cartesiaVoiceId` stored in `voiceClones` table
+5. During translation, cloned voice ID is used for Cartesia TTS
+
+**Fallback:** Users without a voice clone get a default Cartesia public voice via `getDefaultCartesiaVoiceId` action (fetches from Cartesia API with hardcoded fallback IDs).

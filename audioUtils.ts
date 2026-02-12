@@ -1,6 +1,3 @@
-
-import { Blob } from '@google/genai';
-
 export function decode(base64: string): Uint8Array {
   const binaryString = atob(base64);
   const len = binaryString.length;
@@ -39,16 +36,36 @@ export async function decodeAudioData(
   return buffer;
 }
 
-export function createBlob(data: Float32Array): Blob {
-  const l = data.length;
-  const int16 = new Int16Array(l);
-  for (let i = 0; i < l; i++) {
-    // Clipping
-    const s = Math.max(-1, Math.min(1, data[i]));
+/**
+ * Convert Float32 audio samples to raw Int16 PCM ArrayBuffer.
+ * Used to send binary frames to Deepgram's streaming WebSocket.
+ */
+export function float32ToInt16Buffer(float32: Float32Array): ArrayBuffer {
+  const int16 = new Int16Array(float32.length);
+  for (let i = 0; i < float32.length; i++) {
+    const s = Math.max(-1, Math.min(1, float32[i]));
     int16[i] = s < 0 ? s * 32768 : s * 32767;
   }
+  return int16.buffer;
+}
+
+/**
+ * Convert Float32 audio samples to base64-encoded Int16 PCM for Gemini Live API.
+ * Returns the data + mimeType expected by session.sendRealtimeInput({ media: ... }).
+ */
+export function createGeminiAudioBlob(float32: Float32Array): { data: string; mimeType: string } {
+  const int16 = new Int16Array(float32.length);
+  for (let i = 0; i < float32.length; i++) {
+    const s = Math.max(-1, Math.min(1, float32[i]));
+    int16[i] = s < 0 ? s * 32768 : s * 32767;
+  }
+  const bytes = new Uint8Array(int16.buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
   return {
-    data: encode(new Uint8Array(int16.buffer)),
+    data: btoa(binary),
     mimeType: 'audio/pcm;rate=16000',
   };
 }

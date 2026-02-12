@@ -1,8 +1,39 @@
 import { mutation, internalMutation } from "../_generated/server";
-import { v } from "convex/values";
-import { getCurrentUser, getCurrentUserOrNull, hasExceededMinutes, getTierLimits } from "../lib/utils";
-import { canUserAccessRoom, checkRateLimit, RATE_LIMITS, RateLimitError } from "../lib/permissions";
-import { internal } from "../_generated/api";
+import { v, ConvexError } from "convex/values";
+import { getCurrentUser, getCurrentUserOrNull, hasExceededMinutes, getTierLimits, getMonthStart } from "../lib/utils";
+
+/**
+ * Inline helper: add minutes to user record (avoids nested ctx.runMutation overhead)
+ */
+async function addMinutesUsedInline(
+  ctx: any,
+  userId: any,
+  minutes: number
+) {
+  try {
+    const user = await ctx.db.get(userId);
+    if (!user) return;
+
+    const monthStart = getMonthStart();
+    const currentMinutesReset = user.minutesResetAt ?? 0;
+    const currentMinutesUsed = user.minutesUsedThisMonth ?? 0;
+
+    if (currentMinutesReset < monthStart) {
+      await ctx.db.patch(userId, {
+        minutesUsedThisMonth: minutes,
+        minutesResetAt: monthStart,
+        updatedAt: Date.now(),
+      });
+    } else {
+      await ctx.db.patch(userId, {
+        minutesUsedThisMonth: currentMinutesUsed + minutes,
+        updatedAt: Date.now(),
+      });
+    }
+  } catch (e) {
+    console.error("addMinutesUsedInline failed:", e);
+  }
+}
 
 /**
  * Start a new session in a room
@@ -12,23 +43,20 @@ export const start = mutation({
   args: {
     roomId: v.id("rooms"),
     recordingEnabled: v.optional(v.boolean()),
+    userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // Require authentication — no guest access
-    const user = await getCurrentUser(ctx);
+    console.log("[session:start] Starting. roomId:", args.roomId, "email:", args.userEmail);
 
-    // Rate limit session starts
-    const userTier = user.subscriptionTier ?? "free";
-    const rateLimitConfig = RATE_LIMITS[userTier] ?? RATE_LIMITS.free;
-    const rateCheck = checkRateLimit(`session:${user._id}`, rateLimitConfig);
-    if (!rateCheck.allowed) {
-      throw new RateLimitError(rateCheck.resetAt);
-    }
+    // Require authentication — no guest access (with email fallback for cross-origin)
+    const user = await getCurrentUser(ctx, args.userEmail);
+    console.log("[session:start] User found:", user._id, user.email);
 
     // Check if user has exceeded their minutes
+    const userTier = user.subscriptionTier ?? "free";
     if (hasExceededMinutes(user)) {
       const limits = getTierLimits(userTier);
-      throw new Error(
+      throw new ConvexError(
         `You've used all ${limits.minutesPerMonth} minutes for this month. Upgrade your plan for more.`
       );
     }
@@ -41,6 +69,8 @@ export const start = mutation({
       .filter((q) => q.eq(q.field("status"), "active"))
       .collect();
 
+    console.log("[session:start] Existing active sessions:", existingUserSessions.length);
+
     const now = Date.now();
     for (const oldSession of existingUserSessions) {
       const durationMinutes = Math.round((now - oldSession.startedAt) / 60000);
@@ -49,15 +79,8 @@ export const start = mutation({
         endedAt: now,
         durationMinutes,
       });
-      // Track minutes for the ended session
-      try {
-        await ctx.runMutation(internal.users.mutations.addMinutesUsed, {
-          userId: user._id,
-          minutes: durationMinutes,
-        });
-      } catch (e) {
-        // Ignore if user not found
-      }
+      // Track minutes inline (no nested ctx.runMutation — avoids isolated JS context overhead)
+      await addMinutesUsedInline(ctx, user._id, durationMinutes);
     }
 
     // Check for existing active session in this room (from another user)
@@ -67,6 +90,7 @@ export const start = mutation({
       .first();
 
     if (existingRoomSession) {
+      console.log("[session:start] Joining existing room session:", existingRoomSession._id);
       return { sessionId: existingRoomSession._id };
     }
 
@@ -86,32 +110,38 @@ export const start = mutation({
       status: "active",
       recordingEnabled: args.recordingEnabled ?? false,
     });
+    console.log("[session:start] Session created:", sessionId);
 
-    // Update analytics
-    const todayDate = new Date().toISOString().split("T")[0];
-    const existingAnalytics = await ctx.db
-      .query("analytics")
-      .withIndex("by_user_date", (q) => q.eq("userId", user._id).eq("date", todayDate))
-      .unique();
+    // Update analytics (non-critical — don't let this crash the session start)
+    try {
+      const todayDate = new Date().toISOString().split("T")[0];
+      const existingAnalytics = await ctx.db
+        .query("analytics")
+        .withIndex("by_user_date", (q) => q.eq("userId", user._id).eq("date", todayDate))
+        .unique();
 
-    if (existingAnalytics) {
-      await ctx.db.patch(existingAnalytics._id, {
-        sessionsStarted: existingAnalytics.sessionsStarted + 1,
-        updatedAt: now,
-      });
-    } else {
-      await ctx.db.insert("analytics", {
-        userId: user._id,
-        date: todayDate,
-        minutesUsed: 0,
-        sessionsStarted: 1,
-        messagesTranslated: 0,
-        roomsCreated: 0,
-        languagesUsed: [],
-        updatedAt: now,
-      });
+      if (existingAnalytics) {
+        await ctx.db.patch(existingAnalytics._id, {
+          sessionsStarted: existingAnalytics.sessionsStarted + 1,
+          updatedAt: now,
+        });
+      } else {
+        await ctx.db.insert("analytics", {
+          userId: user._id,
+          date: todayDate,
+          minutesUsed: 0,
+          sessionsStarted: 1,
+          messagesTranslated: 0,
+          roomsCreated: 0,
+          languagesUsed: [],
+          updatedAt: now,
+        });
+      }
+    } catch (e) {
+      console.error("[session:start] Analytics failed:", e);
     }
 
+    console.log("[session:start] Done. sessionId:", sessionId);
     return { sessionId };
   },
 });
@@ -126,7 +156,7 @@ export const end = mutation({
 
     const session = await ctx.db.get(args.sessionId);
     if (!session) {
-      throw new Error("Session not found");
+      throw new ConvexError("Session not found");
     }
 
     if (session.status !== "active") {
@@ -143,16 +173,9 @@ export const end = mutation({
       durationMinutes,
     });
 
-    // Update host's minutes used
+    // Update host's minutes used (inline — no nested runMutation)
     if (session.hostUserId) {
-      try {
-        await ctx.runMutation(internal.users.mutations.addMinutesUsed, {
-          userId: session.hostUserId,
-          minutes: durationMinutes,
-        });
-      } catch (e) {
-        // Ignore if user not found
-      }
+      await addMinutesUsedInline(ctx, session.hostUserId, durationMinutes);
     }
 
     return { durationMinutes };
@@ -167,11 +190,11 @@ export const pause = mutation({
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.sessionId);
     if (!session) {
-      throw new Error("Session not found");
+      throw new ConvexError("Session not found");
     }
 
     if (session.status !== "active") {
-      throw new Error("Session is not active");
+      throw new ConvexError("Session is not active");
     }
 
     await ctx.db.patch(args.sessionId, { status: "paused" });
@@ -188,11 +211,11 @@ export const resume = mutation({
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.sessionId);
     if (!session) {
-      throw new Error("Session not found");
+      throw new ConvexError("Session not found");
     }
 
     if (session.status !== "paused") {
-      throw new Error("Session is not paused");
+      throw new ConvexError("Session is not paused");
     }
 
     await ctx.db.patch(args.sessionId, { status: "active" });
@@ -250,16 +273,9 @@ export const cleanupStaleSessions = internalMutation({
         durationMinutes,
       });
 
-      // Track minutes for the session host
+      // Track minutes for the session host (inline)
       if (session.hostUserId) {
-        try {
-          await ctx.runMutation(internal.users.mutations.addMinutesUsed, {
-            userId: session.hostUserId,
-            minutes: durationMinutes,
-          });
-        } catch (e) {
-          // Ignore if user not found
-        }
+        await addMinutesUsedInline(ctx, session.hostUserId, durationMinutes);
       }
     }
 
@@ -292,16 +308,9 @@ export const endAllInRoom = internalMutation({
         durationMinutes,
       });
 
-      // Only update minutes if it's a real user
+      // Track minutes inline
       if (session.hostUserId) {
-        try {
-          await ctx.runMutation(internal.users.mutations.addMinutesUsed, {
-            userId: session.hostUserId,
-            minutes: durationMinutes,
-          });
-        } catch (e) {
-          // Ignore if user not found (guest session)
-        }
+        await addMinutesUsedInline(ctx, session.hostUserId, durationMinutes);
       }
     }
   },

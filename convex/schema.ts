@@ -25,6 +25,9 @@ export default defineSchema({
     spokenLanguages: v.optional(v.array(v.string())), // Languages user speaks
     isDiscoverable: v.optional(v.boolean()), // Show in user directory (default true)
 
+    // Voice cloning
+    hasVoiceClone: v.optional(v.boolean()), // Whether user has set up voice cloning
+
     // Subscription (default to free)
     subscriptionTier: v.optional(v.union(
       v.literal("free"),
@@ -368,6 +371,19 @@ export default defineSchema({
     translationEnabled: v.boolean(),
   })
     .index("by_user_friend", ["userId", "friendId"]),
+
+  // ============================================
+  // VOICE CLONES TABLE
+  // User voice clones for Cartesia TTS
+  // ============================================
+  voiceClones: defineTable({
+    userId: v.id("users"),
+    cartesiaVoiceId: v.string(), // Cartesia's voice ID from clone API
+    name: v.string(), // Display name (e.g., "My Voice")
+    language: v.string(), // Primary language of the recording
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"]),
 });
 
 // ============================================

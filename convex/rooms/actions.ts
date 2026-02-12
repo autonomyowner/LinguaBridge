@@ -4,12 +4,24 @@ import { api } from "../_generated/api";
 import { SignJWT } from "jose";
 
 /**
+ * Resolve user from auth token or email fallback (cross-origin workaround)
+ */
+async function resolveUser(ctx: any, userEmail?: string) {
+  let user = await ctx.runQuery(api.users.queries.getCurrent, {});
+  if (!user && userEmail) {
+    user = await ctx.runQuery(api.users.queries.getByEmail, { email: userEmail });
+  }
+  return user;
+}
+
+/**
  * Generate a LiveKit access token for joining a room
  * Requires authentication — guests are blocked
  */
 export const generateLiveKitToken = action({
   args: {
     roomId: v.id("rooms"),
+    userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{ token: string; url: string }> => {
     // Get room details from database
@@ -30,8 +42,8 @@ export const generateLiveKitToken = action({
       throw new Error("LiveKit configuration missing");
     }
 
-    // Require authenticated user
-    const user = await ctx.runQuery(api.users.queries.getCurrent, {});
+    // Require authenticated user (with email fallback for cross-origin)
+    const user = await resolveUser(ctx, args.userEmail);
     if (!user) {
       throw new Error("Authentication required to join a translation room");
     }
@@ -71,15 +83,15 @@ export const generateLiveKitToken = action({
 });
 
 /**
- * Get Gemini API key for authenticated users only
- * The Gemini Live API requires a direct WebSocket from the browser,
- * so we provide the key server-side only to authenticated users with valid sessions.
+ * Get Gemini API key for authenticated users only.
+ * Used by the browser for Gemini Live speech-to-speech translation.
  */
 export const getGeminiApiKey = action({
-  args: {},
-  handler: async (ctx): Promise<{ apiKey: string }> => {
-    // Require authentication
-    const user = await ctx.runQuery(api.users.queries.getCurrent, {});
+  args: {
+    userEmail: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ apiKey: string }> => {
+    const user = await resolveUser(ctx, args.userEmail);
     if (!user) {
       throw new Error("Authentication required");
     }
@@ -93,3 +105,48 @@ export const getGeminiApiKey = action({
   },
 });
 
+/**
+ * Get Deepgram API key for authenticated users only.
+ * Used by the browser to open a WebSocket to Deepgram Nova-2 for real-time STT.
+ */
+export const getDeepgramApiKey = action({
+  args: {
+    userEmail: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ apiKey: string }> => {
+    const user = await resolveUser(ctx, args.userEmail);
+    if (!user) {
+      throw new Error("Authentication required");
+    }
+
+    const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
+    if (!deepgramApiKey) {
+      throw new Error("Deepgram API key not configured");
+    }
+
+    return { apiKey: deepgramApiKey };
+  },
+});
+
+/**
+ * Get OpenRouter API key for authenticated users only.
+ * Used by the browser for streaming translation via OpenRouter REST API.
+ */
+export const getOpenRouterApiKey = action({
+  args: {
+    userEmail: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ apiKey: string }> => {
+    const user = await resolveUser(ctx, args.userEmail);
+    if (!user) {
+      throw new Error("Authentication required");
+    }
+
+    const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+    if (!openRouterApiKey) {
+      throw new Error("OpenRouter API key not configured");
+    }
+
+    return { apiKey: openRouterApiKey };
+  },
+});

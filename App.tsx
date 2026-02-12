@@ -15,6 +15,8 @@ import AdminMapPage from "./pages/AdminMapPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 import FriendsPage from "./pages/FriendsPage";
 import MessagesPage from "./pages/MessagesPage";
+import VoiceSetupPage from "./pages/VoiceSetupPage";
+import PipelineTestPage from "./pages/PipelineTestPage";
 
 // Components
 import FloatingChat from "./components/FloatingChat";
@@ -23,7 +25,7 @@ import FloatingChat from "./components/FloatingChat";
 const FloatingChatWrapper: React.FC = () => {
   const location = useLocation();
   // Don't show on messages page (already has chat), auth pages, or admin pages
-  const hiddenPaths = ["/messages", "/signin", "/signup", "/forgot-password", "/admin"];
+  const hiddenPaths = ["/messages", "/signin", "/signup", "/forgot-password", "/admin", "/voice-setup", "/test"];
   const shouldHide = hiddenPaths.some(path => location.pathname.startsWith(path));
 
   if (shouldHide) return null;
@@ -43,10 +45,12 @@ const App: React.FC = () => {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/translate" element={<TRAVoicesPage />} />
+        <Route path="/voice-setup" element={<VoiceSetupPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/history" element={<SessionHistoryPage />} />
         <Route path="/friends" element={<FriendsPage />} />
         <Route path="/messages" element={<MessagesPage />} />
+        <Route path="/test" element={<PipelineTestPage />} />
         <Route path="/admin/map" element={<AdminMapPage />} />
         <Route path="/admin" element={<AdminDashboardPage />} />
 
