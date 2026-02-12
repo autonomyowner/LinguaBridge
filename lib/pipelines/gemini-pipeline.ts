@@ -2,10 +2,10 @@ import { GoogleGenAI, Modality, Session, type LiveServerMessage } from '@google/
 import { TranslationPipeline, PipelineConfig, TranscriptEvent, AudioOutputEvent, PipelineError } from './types';
 import { createGeminiAudioBlob } from '../../audioUtils';
 
-const GEMINI_MODEL = 'gemini-2.5-flash-preview-native-audio-dialog';
+const GEMINI_MODEL = 'gemini-2.5-flash-native-audio-preview-12-2025';
 const OUTPUT_SAMPLE_RATE = 24000;
 const MAX_RECONNECT_ATTEMPTS = 5;
-const RECONNECT_BASE_DELAY = 1000;
+const RECONNECT_BASE_DELAY = 2000;
 const RECONNECT_MAX_DELAY = 30000;
 
 export class GeminiPipeline implements TranslationPipeline {
@@ -15,6 +15,7 @@ export class GeminiPipeline implements TranslationPipeline {
   private ai: GoogleGenAI | null = null;
   private session: Session | null = null;
   private isStopping = false;
+  private isConnecting = false;
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -69,12 +70,18 @@ export class GeminiPipeline implements TranslationPipeline {
 
     this.ai = null;
     this.config = null;
+    this.isConnecting = false;
     this.inputTranscriptBuffer = '';
     this.outputTranscriptBuffer = '';
   }
 
   sendAudio(float32Data: Float32Array): void {
-    if (!this.session) return;
+    if (!this.session || this.isStopping || this.isConnecting) return;
+    // Check underlying WebSocket state before sending
+    try {
+      const ws = (this.session as any).conn;
+      if (ws && ws.readyState !== 1 /* OPEN */) return;
+    } catch (_) {}
     try {
       const blob = createGeminiAudioBlob(float32Data);
       this.session.sendRealtimeInput({
@@ -89,19 +96,26 @@ export class GeminiPipeline implements TranslationPipeline {
 
   private async connectSession(): Promise<void> {
     if (this.isStopping || !this.ai || !this.config) return;
+    if (this.isConnecting) return; // Prevent double-connect
 
+    this.isConnecting = true;
     const { sourceLanguage, targetLanguage } = this.config;
 
-    const speechConfig: any = {};
+    // Use ISO 639-1 short code for Gemini (e.g. "es" not "es-ES")
+    const outputLangCode = targetLanguage.code.split('-')[0];
+
+    const speechConfig: any = {
+      languageCode: outputLangCode,
+    };
     if (this.config.geminiVoice) {
       speechConfig.voiceConfig = {
         prebuiltVoiceConfig: { voiceName: this.config.geminiVoice },
       };
     }
-    // Set output language for TTS
-    speechConfig.languageCode = targetLanguage.code;
 
     try {
+      console.log('[GeminiPipeline] Connecting to model:', GEMINI_MODEL, 'lang:', outputLangCode);
+
       this.session = await this.ai.live.connect({
         model: GEMINI_MODEL,
         config: {
@@ -119,6 +133,7 @@ export class GeminiPipeline implements TranslationPipeline {
           onopen: () => {
             if (this.isStopping) return;
             console.log('[GeminiPipeline] Session connected');
+            this.isConnecting = false;
             this.reconnectAttempts = 0;
             this.statusChangeCb?.('connected');
           },
@@ -126,7 +141,8 @@ export class GeminiPipeline implements TranslationPipeline {
             this.handleServerMessage(msg);
           },
           onerror: (e: ErrorEvent) => {
-            console.error('[GeminiPipeline] Session error:', e);
+            console.error('[GeminiPipeline] Session error:', e.message || e);
+            this.isConnecting = false;
             if (!this.isStopping) {
               this.errorCb?.({
                 code: 'gemini_error',
@@ -135,17 +151,34 @@ export class GeminiPipeline implements TranslationPipeline {
               });
             }
           },
-          onclose: () => {
-            console.warn('[GeminiPipeline] Session closed');
+          onclose: (e: CloseEvent) => {
+            console.warn('[GeminiPipeline] Session closed. Code:', e.code, 'Reason:', e.reason, 'Clean:', e.wasClean);
             this.session = null;
-            if (!this.isStopping) {
-              this.reconnect();
+            this.isConnecting = false;
+
+            if (this.isStopping) return;
+
+            // Code 1000 = normal close, 1001 = going away — don't reconnect for server rejections
+            // Code 1006 = abnormal (network), 1011 = server error — worth retrying
+            if (e.code === 1000 && e.wasClean) {
+              // Server intentionally closed — likely bad config/model/key
+              console.error('[GeminiPipeline] Server closed connection cleanly. May indicate invalid model or config.');
+              this.errorCb?.({
+                code: 'gemini_rejected',
+                message: 'Gemini rejected the connection. Check API key and model availability.',
+                recoverable: false,
+              });
+              this.statusChangeCb?.('disconnected');
+              return;
             }
+
+            this.reconnect();
           },
         },
       });
     } catch (err: any) {
       console.error('[GeminiPipeline] Failed to connect session:', err);
+      this.isConnecting = false;
       if (!this.isStopping) {
         this.errorCb?.({
           code: 'gemini_connect_failed',
@@ -161,6 +194,11 @@ export class GeminiPipeline implements TranslationPipeline {
 
   private handleServerMessage(msg: LiveServerMessage): void {
     if (!this.config) return;
+
+    // Log goAway messages (server telling us to disconnect soon)
+    if (msg.goAway) {
+      console.warn('[GeminiPipeline] Server goAway:', msg.goAway);
+    }
 
     const content = msg.serverContent;
     if (!content) return;
@@ -231,10 +269,11 @@ export class GeminiPipeline implements TranslationPipeline {
       RECONNECT_MAX_DELAY,
     );
 
+    console.log(`[GeminiPipeline] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
     this.statusChangeCb?.('reconnecting');
     this.errorCb?.({
       code: 'reconnecting',
-      message: `Reconnecting Gemini... (attempt ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`,
+      message: `Reconnecting... (attempt ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`,
       recoverable: true,
     });
 

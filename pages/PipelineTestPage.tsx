@@ -347,7 +347,7 @@ const PipelineTestPage: React.FC = () => {
         }, 8000);
 
         ai.live.connect({
-          model: 'gemini-2.5-flash-preview-native-audio-dialog',
+          model: 'gemini-2.5-flash-native-audio-preview-12-2025',
           config: {
             responseModalities: [Modality.AUDIO],
             systemInstruction: { parts: [{ text: 'Test session. Say nothing.' }] },
