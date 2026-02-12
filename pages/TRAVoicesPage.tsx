@@ -689,7 +689,7 @@ const TRAVoicesPage: React.FC = () => {
                     }}
                   >
                     <p className="text-sm font-semibold">Standard</p>
-                    <p className="text-xs mt-0.5" style={{ opacity: 0.8 }}>Deepgram + GPT + Cartesia</p>
+                    <p className="text-xs mt-0.5" style={{ opacity: 0.8 }}>Stable & voice cloning</p>
                   </button>
                   <button
                     onClick={() => !isActive && setPipelineMode('gemini')}
@@ -705,8 +705,8 @@ const TRAVoicesPage: React.FC = () => {
                       borderLeft: '1px solid var(--border-soft)',
                     }}
                   >
-                    <p className="text-sm font-semibold">Gemini Live</p>
-                    <p className="text-xs mt-0.5" style={{ opacity: 0.8 }}>End-to-end speech AI</p>
+                    <p className="text-sm font-semibold">Beta</p>
+                    <p className="text-xs mt-0.5" style={{ opacity: 0.8 }}>Low latency AI</p>
                   </button>
                 </div>
                 {isActive && (
@@ -767,10 +767,10 @@ const TRAVoicesPage: React.FC = () => {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold mb-1" style={{ color: 'var(--matcha-700)' }}>
-                        Gemini Built-in Voice
+                        Beta Engine
                       </p>
                       <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                        Uses Gemini's native speech-to-speech AI. Lower latency, single connection. Voice cloning is not available in this mode.
+                        Uses low-latency speech-to-speech AI. Single connection, faster response. Voice cloning is not available in this mode.
                       </p>
                     </div>
                   </div>
