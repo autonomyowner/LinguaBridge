@@ -14,11 +14,9 @@ const LaunchCountdown: React.FC<{ isRTL: boolean }> = ({ isRTL }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const captureLead = useMutation(api.leads.mutations.capture);
 
-  // Calculate 12 days from now
+  // Fixed launch deadline: February 20, 2026
   useEffect(() => {
-    const launchDate = new Date();
-    launchDate.setDate(launchDate.getDate() + 12);
-    launchDate.setHours(0, 0, 0, 0);
+    const launchDate = new Date('2026-02-20T00:00:00');
 
     const timer = setInterval(() => {
       const now = new Date().getTime();
