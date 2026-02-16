@@ -9,9 +9,10 @@ const CARTESIA_WS_URL = 'wss://api.cartesia.ai/tts/websocket';
 const CARTESIA_MODEL_ID = 'sonic-2';
 const OUTPUT_SAMPLE_RATE = 24000;
 const INPUT_SAMPLE_RATE = 16000;
-const MAX_RECONNECT_ATTEMPTS = 5;
+const MAX_RECONNECT_ATTEMPTS = 10;
 const RECONNECT_BASE_DELAY = 1000;
 const RECONNECT_MAX_DELAY = 30000;
+const DEEPGRAM_KEEPALIVE_INTERVAL = 8000; // 8s keepalive ping
 
 export class StandardPipeline implements TranslationPipeline {
   readonly mode = 'standard' as const;
@@ -24,7 +25,9 @@ export class StandardPipeline implements TranslationPipeline {
   private reconnectAttempts = 0;
   private cartesiaReconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private deepgramKeepaliveTimer: ReturnType<typeof setInterval> | null = null;
   private isStopping = false;
+  private lastDeepgramCloseCode = 0;
 
   // Callbacks
   private transcriptCb: ((event: TranscriptEvent) => void) | null = null;
@@ -49,6 +52,7 @@ export class StandardPipeline implements TranslationPipeline {
     this.isStopping = false;
     this.reconnectAttempts = 0;
     this.cartesiaReconnectAttempts = 0;
+    this.lastDeepgramCloseCode = 0;
 
     // Connect both WebSockets
     this.connectCartesiaWs();
@@ -62,6 +66,7 @@ export class StandardPipeline implements TranslationPipeline {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    this.stopDeepgramKeepalive();
     this.reconnectAttempts = MAX_RECONNECT_ATTEMPTS;
 
     if (this.deepgramWs) {
@@ -86,6 +91,24 @@ export class StandardPipeline implements TranslationPipeline {
 
   // --- Deepgram STT ---
 
+  private startDeepgramKeepalive(): void {
+    this.stopDeepgramKeepalive();
+    this.deepgramKeepaliveTimer = setInterval(() => {
+      if (this.deepgramWs?.readyState === WebSocket.OPEN) {
+        try {
+          this.deepgramWs.send(JSON.stringify({ type: 'KeepAlive' }));
+        } catch (_) {}
+      }
+    }, DEEPGRAM_KEEPALIVE_INTERVAL);
+  }
+
+  private stopDeepgramKeepalive(): void {
+    if (this.deepgramKeepaliveTimer) {
+      clearInterval(this.deepgramKeepaliveTimer);
+      this.deepgramKeepaliveTimer = null;
+    }
+  }
+
   private connectDeepgramWs(): void {
     if (this.isStopping || !this.config) return;
     const { sourceLanguage, apiKeys } = this.config;
@@ -102,6 +125,7 @@ export class StandardPipeline implements TranslationPipeline {
       if (this.isStopping) { ws.close(); return; }
       console.log('[StandardPipeline] Deepgram WebSocket connected');
       this.reconnectAttempts = 0;
+      this.startDeepgramKeepalive();
       this.statusChangeCb?.('connected');
     };
 
@@ -111,13 +135,15 @@ export class StandardPipeline implements TranslationPipeline {
 
     ws.onerror = () => {
       console.error('[StandardPipeline] Deepgram WebSocket error');
-      this.deepgramWs = null;
-      if (!this.isStopping) this.reconnectDeepgram();
+      // Don't reconnect here — onclose always fires after onerror,
+      // and reconnecting from both wastes attempts
     };
 
     ws.onclose = (e) => {
       console.warn('[StandardPipeline] Deepgram closed. Code:', e.code, 'Reason:', e.reason);
       this.deepgramWs = null;
+      this.lastDeepgramCloseCode = e.code;
+      this.stopDeepgramKeepalive();
 
       if (!this.isStopping) {
         this.reconnectDeepgram();
@@ -172,9 +198,13 @@ export class StandardPipeline implements TranslationPipeline {
     if (this.isStopping) return;
 
     if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      const codeHint = this.lastDeepgramCloseCode === 1008 ? ' (policy violation — check API key)'
+        : this.lastDeepgramCloseCode === 1006 ? ' (network issue)'
+        : this.lastDeepgramCloseCode ? ` (code ${this.lastDeepgramCloseCode})`
+        : '';
       this.errorCb?.({
         code: 'max_reconnect',
-        message: 'Connection lost. Please restart the session.',
+        message: `Speech recognition lost${codeHint}. Please restart the session.`,
         recoverable: false,
       });
       this.statusChangeCb?.('disconnected');
@@ -359,8 +389,9 @@ export class StandardPipeline implements TranslationPipeline {
       } catch (_) {}
     };
 
-    ws.onerror = (e) => {
-      console.error('[StandardPipeline] Cartesia WebSocket error:', e);
+    ws.onerror = () => {
+      console.error('[StandardPipeline] Cartesia WebSocket error');
+      // Don't reconnect here — onclose fires after onerror
     };
 
     ws.onclose = () => {
