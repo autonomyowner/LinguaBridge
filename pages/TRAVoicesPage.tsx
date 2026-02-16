@@ -318,6 +318,8 @@ const TRAVoicesPage: React.FC = () => {
           needsDefaultVoice ? getDefaultCartesiaVoiceId({ userEmail }) : Promise.resolve({ voiceId: null }),
         ]);
 
+        if (isStoppingRef.current) { setIsConnecting(false); setConnectionStatus('disconnected'); return; }
+
         apiKeys = {
           deepgram: deepgramResult.apiKey,
           openRouter: openRouterResult.apiKey,
@@ -340,6 +342,7 @@ const TRAVoicesPage: React.FC = () => {
       } else {
         // Gemini mode — only need Gemini API key
         const geminiResult = await getGeminiApiKey({ userEmail });
+        if (isStoppingRef.current) { setIsConnecting(false); setConnectionStatus('disconnected'); return; }
         apiKeys = { gemini: geminiResult.apiKey };
       }
 
@@ -353,12 +356,15 @@ const TRAVoicesPage: React.FC = () => {
       });
       const roomId = result.roomId;
       setCurrentRoomId(roomId);
+      if (isStoppingRef.current) { setIsConnecting(false); setConnectionStatus('disconnected'); return; }
 
       // Generate LiveKit token
       const { token, url } = await generateLiveKitToken({ roomId, userEmail });
+      if (isStoppingRef.current) { setIsConnecting(false); setConnectionStatus('disconnected'); return; }
 
       // Start session
       const { sessionId } = await startSession({ roomId, userEmail });
+      if (isStoppingRef.current) { setIsConnecting(false); setConnectionStatus('disconnected'); return; }
       setCurrentSessionId(sessionId);
       sessionStartTimeRef.current = Date.now();
 
@@ -367,6 +373,9 @@ const TRAVoicesPage: React.FC = () => {
       audioContextOutRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: OUTPUT_SAMPLE_RATE });
       await audioContextInRef.current.resume();
       await audioContextOutRef.current.resume();
+      if (audioContextInRef.current.state !== 'running' || audioContextOutRef.current.state !== 'running') {
+        throw new Error('Audio system failed to start. Please check browser permissions and try again.');
+      }
       destNodeRef.current = audioContextOutRef.current.createMediaStreamDestination();
       console.log('AudioContexts ready. In:', audioContextInRef.current.state, 'Out:', audioContextOutRef.current.state);
 
@@ -562,7 +571,17 @@ const TRAVoicesPage: React.FC = () => {
       console.error('connectBridge error:', err);
       let msg = err?.data || err?.message || String(err);
       if (typeof msg === 'object') msg = JSON.stringify(msg);
-      if (msg.includes('Server Error') || msg.includes('Internal')) {
+
+      // Map technical errors to user-friendly messages
+      if (msg.includes('NotAllowedError') || msg.includes('Permission denied')) {
+        setError('Microphone access denied. Please allow microphone access in your browser settings.');
+      } else if (msg.includes('NotFoundError') || msg.includes('Requested device not found')) {
+        setError('No microphone found. Please connect a microphone and try again.');
+      } else if (msg.includes('Authentication required') || msg.includes('Unauthenticated')) {
+        setError('Session expired. Please sign in again.');
+      } else if (msg.includes('API key not configured') || msg.includes('not set')) {
+        setError('Translation service not configured. Please contact support.');
+      } else if (msg.includes('Server Error') || msg.includes('Internal')) {
         setError('Server error starting session. Please try again in a moment.');
       } else {
         setError(msg);
@@ -670,7 +689,7 @@ const TRAVoicesPage: React.FC = () => {
 
               {/* Pipeline Toggle */}
               <div className="matcha-card p-5">
-                <label className="matcha-label mb-3 block">Translation Engine</label>
+                <label className="matcha-label mb-3 block">{t('translate.engine')}</label>
                 <div
                   className="grid grid-cols-2 gap-0 rounded-xl overflow-hidden"
                   style={{ border: '1px solid var(--border-soft)' }}
@@ -688,8 +707,8 @@ const TRAVoicesPage: React.FC = () => {
                       cursor: isActive ? 'not-allowed' : 'pointer',
                     }}
                   >
-                    <p className="text-sm font-semibold">Standard</p>
-                    <p className="text-xs mt-0.5" style={{ opacity: 0.8 }}>Stable & voice cloning</p>
+                    <p className="text-sm font-semibold">{t('translate.standard')}</p>
+                    <p className="text-xs mt-0.5" style={{ opacity: 0.8 }}>{t('translate.standardDesc')}</p>
                   </button>
                   <button
                     onClick={() => !isActive && setPipelineMode('gemini')}
@@ -705,13 +724,13 @@ const TRAVoicesPage: React.FC = () => {
                       borderLeft: '1px solid var(--border-soft)',
                     }}
                   >
-                    <p className="text-sm font-semibold">Beta</p>
-                    <p className="text-xs mt-0.5" style={{ opacity: 0.8 }}>Low latency AI</p>
+                    <p className="text-sm font-semibold">{t('translate.beta')}</p>
+                    <p className="text-xs mt-0.5" style={{ opacity: 0.8 }}>{t('translate.betaDesc')}</p>
                   </button>
                 </div>
                 {isActive && (
                   <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
-                    Cannot switch engines during an active session
+                    {t('translate.cannotSwitchEngines')}
                   </p>
                 )}
               </div>
@@ -733,17 +752,17 @@ const TRAVoicesPage: React.FC = () => {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold mb-1" style={{ color: 'var(--matcha-700)' }}>
-                        Sound like yourself
+                        {t('translate.voiceClone.title')}
                       </p>
                       <p className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>
-                        Set up voice cloning so your translations sound like you, not a robot.
+                        {t('translate.voiceClone.desc')}
                       </p>
                       <a
                         href="/voice-setup"
                         className="text-xs font-semibold"
                         style={{ color: 'var(--matcha-600)' }}
                       >
-                        Set up voice clone →
+                        {t('translate.voiceClone.setupLink')}
                       </a>
                     </div>
                   </div>
@@ -767,10 +786,10 @@ const TRAVoicesPage: React.FC = () => {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold mb-1" style={{ color: 'var(--matcha-700)' }}>
-                        Beta Engine
+                        {t('translate.betaEngine.title')}
                       </p>
                       <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                        Uses low-latency speech-to-speech AI. Single connection, faster response. Voice cloning is not available in this mode.
+                        {t('translate.betaEngine.desc')}
                       </p>
                     </div>
                   </div>

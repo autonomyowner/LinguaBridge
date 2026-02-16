@@ -22,6 +22,7 @@ export class StandardPipeline implements TranslationPipeline {
   private cartesiaContextId = 0;
   private partialTranscript = '';
   private reconnectAttempts = 0;
+  private cartesiaReconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private isStopping = false;
 
@@ -47,6 +48,7 @@ export class StandardPipeline implements TranslationPipeline {
     this.config = config;
     this.isStopping = false;
     this.reconnectAttempts = 0;
+    this.cartesiaReconnectAttempts = 0;
 
     // Connect both WebSockets
     this.connectCartesiaWs();
@@ -204,9 +206,13 @@ export class StandardPipeline implements TranslationPipeline {
     if (!this.config || !this.config.apiKeys.openRouter) return;
     const { sourceLanguage, targetLanguage, apiKeys } = this.config;
 
+    const abortController = new AbortController();
+    const fetchTimeout = setTimeout(() => abortController.abort(), 15000);
+
     try {
       const response = await fetch(OPENROUTER_API_URL, {
         method: 'POST',
+        signal: abortController.signal,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKeys.openRouter}`,
@@ -225,7 +231,16 @@ export class StandardPipeline implements TranslationPipeline {
       });
 
       if (!response.ok) {
-        console.error('[StandardPipeline] OpenRouter error:', response.status);
+        const errorBody = await response.text().catch(() => '');
+        const statusMsg = response.status === 401 ? 'Invalid API key'
+          : response.status === 429 ? 'Rate limited — too many requests'
+          : `HTTP ${response.status}`;
+        console.error('[StandardPipeline] OpenRouter error:', response.status, errorBody);
+        this.errorCb?.({
+          code: 'openrouter_error',
+          message: `Translation failed: ${statusMsg}`,
+          recoverable: response.status === 429,
+        });
         return;
       }
 
@@ -257,6 +272,8 @@ export class StandardPipeline implements TranslationPipeline {
         }
       }
 
+      clearTimeout(fetchTimeout);
+
       const finalTranslation = translatedText.trim();
       if (!finalTranslation) return;
 
@@ -269,15 +286,28 @@ export class StandardPipeline implements TranslationPipeline {
         text: finalTranslation,
         language: targetLanguage.code,
       });
-    } catch (err) {
-      console.error('[StandardPipeline] Translation failed:', err);
+    } catch (err: any) {
+      clearTimeout(fetchTimeout);
+      if (err?.name === 'AbortError') {
+        console.warn('[StandardPipeline] OpenRouter request timed out (15s)');
+        this.errorCb?.({
+          code: 'openrouter_timeout',
+          message: 'Translation timed out — retrying on next utterance',
+          recoverable: true,
+        });
+      } else {
+        console.error('[StandardPipeline] Translation failed:', err);
+      }
     }
   }
 
   // --- Cartesia TTS ---
 
   private sendToCartesia(text: string): void {
-    if (!this.cartesiaWs || this.cartesiaWs.readyState !== WebSocket.OPEN) return;
+    if (!this.cartesiaWs || this.cartesiaWs.readyState !== WebSocket.OPEN) {
+      console.warn('[StandardPipeline] Cartesia WS not ready, skipping TTS for:', text.substring(0, 50));
+      return;
+    }
     if (!this.config?.voiceId) return;
 
     this.cartesiaContextId += 1;
@@ -310,6 +340,7 @@ export class StandardPipeline implements TranslationPipeline {
 
     ws.onopen = () => {
       console.log('[StandardPipeline] Cartesia WebSocket connected');
+      this.cartesiaReconnectAttempts = 0;
     };
 
     ws.onmessage = (event) => {
@@ -319,6 +350,11 @@ export class StandardPipeline implements TranslationPipeline {
           this.audioOutputCb?.({ pcmBase64: data.data, sampleRate: OUTPUT_SAMPLE_RATE });
         } else if (data.type === 'error') {
           console.error('[StandardPipeline] Cartesia TTS error:', data.message || data);
+          this.errorCb?.({
+            code: 'cartesia_error',
+            message: `TTS error: ${data.message || 'Voice synthesis failed'}`,
+            recoverable: true,
+          });
         }
       } catch (_) {}
     };
@@ -328,12 +364,24 @@ export class StandardPipeline implements TranslationPipeline {
     };
 
     ws.onclose = () => {
-      if (!this.isStopping) {
-        console.warn('[StandardPipeline] Cartesia WebSocket closed, reconnecting in 2s...');
-        setTimeout(() => {
-          if (!this.isStopping) this.connectCartesiaWs();
-        }, 2000);
+      if (this.isStopping) return;
+
+      this.cartesiaReconnectAttempts += 1;
+      if (this.cartesiaReconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+        console.error('[StandardPipeline] Cartesia max reconnect attempts reached');
+        this.errorCb?.({
+          code: 'cartesia_max_reconnect',
+          message: 'Voice synthesis disconnected. Please restart the session.',
+          recoverable: false,
+        });
+        return;
       }
+
+      const delay = Math.min(2000 * Math.pow(1.5, this.cartesiaReconnectAttempts - 1), 15000);
+      console.warn(`[StandardPipeline] Cartesia WebSocket closed, reconnecting in ${Math.round(delay)}ms (attempt ${this.cartesiaReconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+      setTimeout(() => {
+        if (!this.isStopping) this.connectCartesiaWs();
+      }, delay);
     };
 
     this.cartesiaWs = ws;

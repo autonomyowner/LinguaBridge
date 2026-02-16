@@ -88,7 +88,9 @@ export class GeminiPipeline implements TranslationPipeline {
         audio: { data: blob.data, mimeType: blob.mimeType },
       });
     } catch (e) {
-      // Silently ignore send errors (connection may be closing)
+      if (!this.isStopping) {
+        console.warn('[GeminiPipeline] Failed to send audio:', e);
+      }
     }
   }
 
@@ -99,6 +101,8 @@ export class GeminiPipeline implements TranslationPipeline {
     if (this.isConnecting) return; // Prevent double-connect
 
     this.isConnecting = true;
+    this.inputTranscriptBuffer = '';
+    this.outputTranscriptBuffer = '';
     const { sourceLanguage, targetLanguage } = this.config;
 
     // Use ISO 639-1 short code for Gemini (e.g. "es" not "es-ES")
@@ -121,7 +125,7 @@ export class GeminiPipeline implements TranslationPipeline {
           speechConfig,
           systemInstruction: {
             parts: [{
-              text: `You are a real-time speech translator. The user speaks in ${sourceLanguage.name}. You must translate everything they say into ${targetLanguage.name} and speak the translation naturally. Do NOT repeat the original text. Do NOT add commentary. Just speak the translated version.`,
+              text: `You are a real-time speech translator. The user speaks in ${sourceLanguage.name}. You must translate everything they say into ${targetLanguage.name} (language code: ${outputLangCode}) and speak the translation clearly and naturally. Do NOT repeat the original text. Do NOT add commentary. Just speak the translated version.`,
             }],
           },
           inputAudioTranscription: {},
