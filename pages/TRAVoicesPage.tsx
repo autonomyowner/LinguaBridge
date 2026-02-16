@@ -3,20 +3,18 @@ import { Room, RoomEvent, RemoteParticipant, RemoteTrack, LocalAudioTrack, RoomO
 import { useAction, useMutation, useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { SUPPORTED_LANGUAGES, TranslationMessage, Language } from '../types';
-import { decode } from '../audioUtils';
 import Header from '../components/Header';
 import { useAuth } from '../providers/AuthContext';
 import { useLanguage } from '../providers/LanguageContext';
 import { Id } from '../convex/_generated/dataModel';
 import type { PipelineMode } from '../lib/pipelines/types';
 import type { TranslationPipeline, TranscriptEvent, AudioOutputEvent, PipelineError } from '../lib/pipelines/types';
-import { StandardPipeline } from '../lib/pipelines/standard-pipeline';
+import { StandardPipelineV2 } from '../lib/pipelines/standard-pipeline-v2';
 import { GeminiPipeline } from '../lib/pipelines/gemini-pipeline';
+import { AudioPlaybackScheduler } from '../lib/pipelines/audio-scheduler';
 
 // Shared constants
 const INPUT_SAMPLE_RATE = 16000;
-const OUTPUT_SAMPLE_RATE = 24000;
-const MAX_AUDIO_QUEUE_DEPTH = 10;
 const USAGE_CHECK_INTERVAL = 60000;
 const TRACK_PUBLISH_DELAY = 500;
 
@@ -111,12 +109,8 @@ const TRAVoicesPage: React.FC = () => {
   // --- Core References (shared infrastructure) ---
   const lkRoomRef = useRef<Room | null>(null);
   const audioContextInRef = useRef<AudioContext | null>(null);
-  const audioContextOutRef = useRef<AudioContext | null>(null);
-  const destNodeRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const schedulerRef = useRef<AudioPlaybackScheduler | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
-  const nextStartTimeRef = useRef<number>(0);
-  const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
-  const audioQueueDepthRef = useRef<number>(0);
   const audioElementsRef = useRef<Set<HTMLAudioElement>>(new Set());
   const usageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionStartTimeRef = useRef<number>(0);
@@ -130,37 +124,6 @@ const TRAVoicesPage: React.FC = () => {
   const isStoppingRef = useRef<boolean>(false);
   const currentSessionIdRef = useRef<Id<"sessions"> | null>(null);
   useEffect(() => { currentSessionIdRef.current = currentSessionId; }, [currentSessionId]);
-
-  // --- Play PCM audio (shared by both pipelines) ---
-  const playPcmAudio = useCallback((pcmBase64: string, sampleRate: number = OUTPUT_SAMPLE_RATE) => {
-    if (!audioContextOutRef.current || !destNodeRef.current) return;
-    if (audioQueueDepthRef.current >= MAX_AUDIO_QUEUE_DEPTH) return;
-
-    const ctx = audioContextOutRef.current;
-    const pcmBytes = decode(pcmBase64);
-    const dataInt16 = new Int16Array(pcmBytes.buffer);
-    const frameCount = dataInt16.length;
-    const buffer = ctx.createBuffer(1, frameCount, sampleRate);
-    const channelData = buffer.getChannelData(0);
-    for (let i = 0; i < frameCount; i++) {
-      channelData[i] = dataInt16[i] / 32768.0;
-    }
-
-    const sourceNode = ctx.createBufferSource();
-    sourceNode.buffer = buffer;
-    sourceNode.connect(destNodeRef.current);
-
-    nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
-    sourceNode.start(nextStartTimeRef.current);
-    nextStartTimeRef.current += buffer.duration;
-
-    audioQueueDepthRef.current += 1;
-    sourcesRef.current.add(sourceNode);
-    sourceNode.onended = () => {
-      sourcesRef.current.delete(sourceNode);
-      audioQueueDepthRef.current = Math.max(0, audioQueueDepthRef.current - 1);
-    };
-  }, []);
 
   const stopAll = useCallback(async () => {
     if (isStoppingRef.current) return;
@@ -205,13 +168,13 @@ const TRAVoicesPage: React.FC = () => {
     }
 
     if (audioContextInRef.current) audioContextInRef.current.close().catch(() => {});
-    if (audioContextOutRef.current) audioContextOutRef.current.close().catch(() => {});
     audioContextInRef.current = null;
-    audioContextOutRef.current = null;
 
-    sourcesRef.current.forEach(s => { try { s.stop(); } catch(e) {} });
-    sourcesRef.current.clear();
-    audioQueueDepthRef.current = 0;
+    // Dispose audio scheduler (handles output AudioContext + silence generator)
+    if (schedulerRef.current) {
+      schedulerRef.current.dispose();
+      schedulerRef.current = null;
+    }
 
     audioElementsRef.current.forEach(el => {
       el.pause();
@@ -221,7 +184,6 @@ const TRAVoicesPage: React.FC = () => {
     audioElementsRef.current.clear();
 
     setParticipants([]);
-    nextStartTimeRef.current = 0;
 
     const sid = currentSessionIdRef.current;
     if (sid) {
@@ -368,16 +330,17 @@ const TRAVoicesPage: React.FC = () => {
       setCurrentSessionId(sessionId);
       sessionStartTimeRef.current = Date.now();
 
-      // Setup audio contexts
+      // Setup input audio context + output audio scheduler
       audioContextInRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: INPUT_SAMPLE_RATE });
-      audioContextOutRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: OUTPUT_SAMPLE_RATE });
       await audioContextInRef.current.resume();
-      await audioContextOutRef.current.resume();
-      if (audioContextInRef.current.state !== 'running' || audioContextOutRef.current.state !== 'running') {
+      if (audioContextInRef.current.state !== 'running') {
         throw new Error('Audio system failed to start. Please check browser permissions and try again.');
       }
-      destNodeRef.current = audioContextOutRef.current.createMediaStreamDestination();
-      console.log('AudioContexts ready. In:', audioContextInRef.current.state, 'Out:', audioContextOutRef.current.state);
+
+      const scheduler = new AudioPlaybackScheduler();
+      await scheduler.init();
+      schedulerRef.current = scheduler;
+      console.log('Audio ready. Input:', audioContextInRef.current.state, 'Scheduler:', scheduler.mediaStream ? 'ok' : 'no stream');
 
       // Get microphone access with explicit echo cancellation
       localStreamRef.current = await navigator.mediaDevices.getUserMedia({
@@ -469,8 +432,12 @@ const TRAVoicesPage: React.FC = () => {
         throw new Error('LiveKit room disconnected before track could be published');
       }
 
-      // Publish translated audio track
-      const translatedTrack = new LocalAudioTrack(destNodeRef.current.stream.getAudioTracks()[0]);
+      // Publish translated audio track from scheduler's MediaStream
+      const schedulerStream = schedulerRef.current?.mediaStream;
+      if (!schedulerStream || schedulerStream.getAudioTracks().length === 0) {
+        throw new Error('Audio output stream not available');
+      }
+      const translatedTrack = new LocalAudioTrack(schedulerStream.getAudioTracks()[0]);
       try {
         await room.localParticipant.publishTrack(translatedTrack, {
           name: 'translated-audio',
@@ -491,9 +458,12 @@ const TRAVoicesPage: React.FC = () => {
         }
       }
 
+      // Start silence generator to keep the track alive between speech
+      schedulerRef.current?.startSilenceGenerator();
+
       // --- Create and connect pipeline ---
       const pipeline = pipelineMode === 'standard'
-        ? new StandardPipeline()
+        ? new StandardPipelineV2()
         : new GeminiPipeline();
 
       pipelineRef.current = pipeline;
@@ -523,7 +493,7 @@ const TRAVoicesPage: React.FC = () => {
       });
 
       pipeline.onAudioOutput((event: AudioOutputEvent) => {
-        playPcmAudio(event.pcmBase64, event.sampleRate);
+        schedulerRef.current?.scheduleChunk(event.pcmBase64, event.sampleRate);
       });
 
       pipeline.onStatusChange((status: string) => {
