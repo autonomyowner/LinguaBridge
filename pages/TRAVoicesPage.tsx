@@ -379,8 +379,14 @@ const TRAVoicesPage: React.FC = () => {
       destNodeRef.current = audioContextOutRef.current.createMediaStreamDestination();
       console.log('AudioContexts ready. In:', audioContextInRef.current.state, 'Out:', audioContextOutRef.current.state);
 
-      // Get microphone access
-      localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Get microphone access with explicit echo cancellation
+      localStreamRef.current = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
 
       // Connect to LiveKit
       const roomOptions: RoomOptions = {
@@ -554,13 +560,22 @@ const TRAVoicesPage: React.FC = () => {
       const processor = audioContextInRef.current.createScriptProcessor(4096, 1, 1);
 
       processor.onaudioprocess = (e) => {
+        // Explicitly zero output buffer to prevent mic audio leaking to speakers
+        const outputData = e.outputBuffer.getChannelData(0);
+        outputData.fill(0);
+
         if (isStoppingRef.current || !pipelineRef.current) return;
         const inputData = e.inputBuffer.getChannelData(0);
         pipelineRef.current.sendAudio(inputData);
       };
 
+      // Route through a muted gain node — keeps ScriptProcessor alive
+      // but guarantees zero audio reaches speakers (prevents feedback loop)
+      const silentGain = audioContextInRef.current.createGain();
+      silentGain.gain.value = 0;
       source.connect(processor);
-      processor.connect(audioContextInRef.current.destination);
+      processor.connect(silentGain);
+      silentGain.connect(audioContextInRef.current.destination);
       sourceNodeRef.current = source;
       processorNodeRef.current = processor;
 
