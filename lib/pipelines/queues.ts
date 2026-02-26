@@ -8,7 +8,8 @@
 import type { PipelineError } from './types';
 
 const MAX_RETRIES = 3;
-const STALE_THRESHOLD_MS = 10_000; // discard items older than 10s
+const STALE_THRESHOLD_MS = 20_000; // discard items older than 20s (increased from 10s to reduce cascade drops)
+const MAX_CONCURRENT_TRANSLATIONS = 2;
 
 // --- Translation Queue ---
 
@@ -23,7 +24,7 @@ type TranslateFn = (text: string) => Promise<string | null>;
 
 export class TranslationQueue {
   private queue: TranslationItem[] = [];
-  private processing = false;
+  private processingCount = 0;
   private stopped = false;
 
   constructor(
@@ -40,7 +41,7 @@ export class TranslationQueue {
 
   clear(): void {
     this.queue = [];
-    this.processing = false;
+    this.processingCount = 0;
   }
 
   stop(): void {
@@ -53,15 +54,20 @@ export class TranslationQueue {
   }
 
   private async processNext(): Promise<void> {
-    if (this.processing || this.stopped || this.queue.length === 0) return;
+    if (this.processingCount >= MAX_CONCURRENT_TRANSLATIONS || this.stopped || this.queue.length === 0) return;
 
-    this.processing = true;
+    this.processingCount++;
     const item = this.queue.shift()!;
 
     // Discard stale items
     if (Date.now() - item.timestamp > STALE_THRESHOLD_MS) {
       console.warn('[TranslationQueue] Discarding stale item:', item.text.substring(0, 30));
-      this.processing = false;
+      this.onError({
+        code: 'translation_stale',
+        message: 'Speech discarded (too old) — try speaking again',
+        recoverable: true,
+      });
+      this.processingCount--;
       this.processNext();
       return;
     }
@@ -72,7 +78,7 @@ export class TranslationQueue {
         this.onResult(item.text, translated, item.sourceLanguage);
       }
     } catch (err: any) {
-      if (this.stopped) { this.processing = false; return; }
+      if (this.stopped) { this.processingCount--; return; }
 
       item.retries += 1;
       if (item.retries < MAX_RETRIES && Date.now() - item.timestamp < STALE_THRESHOLD_MS) {
@@ -89,7 +95,7 @@ export class TranslationQueue {
       }
     }
 
-    this.processing = false;
+    this.processingCount--;
     if (!this.stopped) this.processNext();
   }
 }
@@ -125,6 +131,11 @@ export class TTSQueue {
       // Buffer for when connection recovers
       this.queue.push({ text, contextId, timestamp: Date.now() });
       console.warn('[TTSQueue] Buffered (WS not ready):', text.substring(0, 30));
+      this.onError({
+        code: 'tts_buffered',
+        message: 'Voice synthesis queued — waiting for connection',
+        recoverable: true,
+      });
     }
 
     return contextId;

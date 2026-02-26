@@ -33,6 +33,7 @@ export class StandardPipelineV2 implements TranslationPipeline {
   private ttsQueue: TTSQueue | null = null;
   private partialTranscript = '';
   private isStopping = false;
+  private droppedAudioFrames = 0;
 
   // Callbacks
   private transcriptCb: ((event: TranscriptEvent) => void) | null = null;
@@ -87,11 +88,15 @@ export class StandardPipelineV2 implements TranslationPipeline {
     );
     this.ttsQueue.start();
 
-    // --- Connect Cartesia first (so TTS is ready when translations arrive) ---
+    // --- Connect both WebSockets and wait for them to be ready ---
     this.connectCartesia();
-
-    // --- Connect Deepgram ---
     this.connectDeepgram();
+
+    // Await both WebSockets to actually open before returning
+    await Promise.all([
+      this.cartesiaWs!.waitForConnected(10000),
+      this.deepgramWs!.waitForConnected(10000),
+    ]);
   }
 
   disconnect(): void {
@@ -112,7 +117,21 @@ export class StandardPipelineV2 implements TranslationPipeline {
   sendAudio(float32Data: Float32Array): void {
     if (!this.deepgramWs) return;
     const pcmBuffer = float32ToInt16Buffer(float32Data);
-    this.deepgramWs.send(pcmBuffer);
+    const sent = this.deepgramWs.send(pcmBuffer);
+    if (!sent) {
+      this.droppedAudioFrames++;
+      // Emit a warning every ~50 dropped frames (~3.2s of audio at 64ms/frame)
+      if (this.droppedAudioFrames % 50 === 1) {
+        this.errorCb?.({
+          code: 'audio_dropped',
+          message: `Speech input dropped (${this.droppedAudioFrames} frames) — reconnecting to speech recognition`,
+          recoverable: true,
+        });
+      }
+    } else if (this.droppedAudioFrames > 0) {
+      console.log(`[PipelineV2] Audio send recovered after ${this.droppedAudioFrames} dropped frames`);
+      this.droppedAudioFrames = 0;
+    }
   }
 
   // ==========================================================================
@@ -180,6 +199,12 @@ export class StandardPipelineV2 implements TranslationPipeline {
 
       if (!data.is_final) {
         this.partialTranscript = transcript;
+        // Emit partial transcript so the UI shows real-time speech feedback
+        this.transcriptCb?.({
+          type: 'partial',
+          text: transcript,
+          language: this.config.sourceLanguage.code,
+        });
         return;
       }
 
@@ -196,8 +221,16 @@ export class StandardPipelineV2 implements TranslationPipeline {
 
       // Enqueue for translation
       this.translationQueue?.enqueue(finalText, this.config.sourceLanguage.code);
-    } catch (_) {
-      // Ignore parse errors for binary keepalive responses
+    } catch (err) {
+      // Binary keepalive responses can't be parsed — ignore those
+      if (typeof event.data === 'string') {
+        console.error('[PipelineV2] Deepgram message parse error:', err);
+        this.errorCb?.({
+          code: 'deepgram_parse_error',
+          message: 'Failed to parse speech recognition response',
+          recoverable: true,
+        });
+      }
     }
   }
 
@@ -274,7 +307,16 @@ export class StandardPipelineV2 implements TranslationPipeline {
 
       clearTimeout(timeout);
       const result = translated.trim();
-      return result || null;
+      if (!result) {
+        console.warn('[PipelineV2] Empty translation for:', text.substring(0, 50));
+        this.errorCb?.({
+          code: 'empty_translation',
+          message: 'Translation returned empty — your speech may not have been understood',
+          recoverable: true,
+        });
+        return null;
+      }
+      return result;
     } catch (err: any) {
       clearTimeout(timeout);
       if (err?.name === 'AbortError') {
@@ -355,6 +397,13 @@ export class StandardPipelineV2 implements TranslationPipeline {
           recoverable: true,
         });
       }
-    } catch (_) {}
+    } catch (err) {
+      console.error('[PipelineV2] Cartesia message parse error:', err);
+      this.errorCb?.({
+        code: 'cartesia_parse_error',
+        message: 'Failed to parse voice synthesis response',
+        recoverable: true,
+      });
+    }
   }
 }

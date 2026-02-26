@@ -23,7 +23,10 @@ export class AudioPlaybackScheduler {
   private activeSources = new Set<AudioBufferSourceNode>();
   private queueDepth = 0;
   private silenceTimer: ReturnType<typeof setInterval> | null = null;
+  private contextMonitorTimer: ReturnType<typeof setInterval> | null = null;
   private disposed = false;
+  private droppedChunks = 0;
+  private dropCallback: ((count: number) => void) | null = null;
 
   /** Initialize the scheduler. Must be called from a user gesture context. */
   async init(): Promise<void> {
@@ -43,6 +46,11 @@ export class AudioPlaybackScheduler {
     console.log('[AudioScheduler] Initialized at', OUTPUT_SAMPLE_RATE, 'Hz. State:', this.audioContext.state);
   }
 
+  /** Register a callback for when audio chunks are dropped due to queue overflow. */
+  onDrop(cb: (count: number) => void): void {
+    this.dropCallback = cb;
+  }
+
   /** The MediaStream to publish via LiveKit. */
   get mediaStream(): MediaStream | null {
     return this.destNode?.stream ?? null;
@@ -51,7 +59,14 @@ export class AudioPlaybackScheduler {
   /** Schedule a PCM audio chunk for playback. Resamples if needed. */
   scheduleChunk(pcmBase64: string, inputSampleRate: number = CARTESIA_SAMPLE_RATE): void {
     if (this.disposed || !this.audioContext || !this.destNode) return;
-    if (this.queueDepth >= MAX_QUEUE_DEPTH) return; // prevent memory pressure
+    if (this.queueDepth >= MAX_QUEUE_DEPTH) {
+      this.droppedChunks++;
+      if (this.droppedChunks % 5 === 1) {
+        console.warn(`[AudioScheduler] Queue full, dropped ${this.droppedChunks} chunks`);
+        this.dropCallback?.(this.droppedChunks);
+      }
+      return;
+    }
 
     const ctx = this.audioContext;
     const pcmBytes = decode(pcmBase64);
@@ -107,8 +122,30 @@ export class AudioPlaybackScheduler {
    * Without this, some WebRTC implementations mark the track as inactive
    * when no audio has been played for a while.
    */
+  /** Start monitoring AudioContext state — auto-resume if suspended (e.g. mobile tab switch). */
+  private startContextMonitor(): void {
+    this.stopContextMonitor();
+    this.contextMonitorTimer = setInterval(() => {
+      if (this.disposed || !this.audioContext) return;
+      if (this.audioContext.state === 'suspended') {
+        console.warn('[AudioScheduler] AudioContext suspended, resuming...');
+        this.audioContext.resume().catch((e) =>
+          console.error('[AudioScheduler] Failed to resume AudioContext:', e)
+        );
+      }
+    }, 2000);
+  }
+
+  private stopContextMonitor(): void {
+    if (this.contextMonitorTimer) {
+      clearInterval(this.contextMonitorTimer);
+      this.contextMonitorTimer = null;
+    }
+  }
+
   startSilenceGenerator(): void {
     this.stopSilenceGenerator();
+    this.startContextMonitor();
     this.silenceTimer = setInterval(() => {
       if (this.disposed || !this.audioContext || !this.destNode) return;
       if (this.queueDepth > 0) return; // real audio is playing, no need
@@ -121,7 +158,9 @@ export class AudioPlaybackScheduler {
       const src = ctx.createBufferSource();
       src.buffer = buffer;
       src.connect(this.destNode);
-      src.start();
+      // Schedule silence at the next valid time to avoid overlap with real audio
+      const startTime = Math.max(this.nextStartTime, ctx.currentTime);
+      src.start(startTime);
     }, SILENCE_INTERVAL_MS);
   }
 
@@ -144,6 +183,7 @@ export class AudioPlaybackScheduler {
   dispose(): void {
     this.disposed = true;
     this.stopSilenceGenerator();
+    this.stopContextMonitor();
     this.flush();
     if (this.audioContext) {
       this.audioContext.close().catch(() => {});

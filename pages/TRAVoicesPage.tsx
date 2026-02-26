@@ -12,6 +12,7 @@ import type { TranslationPipeline, TranscriptEvent, AudioOutputEvent, PipelineEr
 import { StandardPipelineV2 } from '../lib/pipelines/standard-pipeline-v2';
 import { GeminiPipeline } from '../lib/pipelines/gemini-pipeline';
 import { AudioPlaybackScheduler } from '../lib/pipelines/audio-scheduler';
+import PipelineHealthIndicator, { StageState } from '../components/PipelineHealthIndicator';
 
 // Shared constants
 const INPUT_SAMPLE_RATE = 16000;
@@ -42,6 +43,13 @@ const TRAVoicesPage: React.FC = () => {
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | null>(null);
   const [voicesLoading, setVoicesLoading] = useState(false);
   const [pipelineMode, setPipelineMode] = useState<PipelineMode>('standard');
+  const [partialText, setPartialText] = useState<string>('');
+  const [sttState, setSttState] = useState<StageState>('idle');
+  const [translateState, setTranslateState] = useState<StageState>('idle');
+  const [ttsState, setTtsState] = useState<StageState>('idle');
+  const [droppedFrames, setDroppedFrames] = useState(0);
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
+  const lkDisconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // --- Convex Hooks ---
   const generateLiveKitToken = useAction(api.rooms.actions.generateLiveKitToken);
@@ -57,7 +65,7 @@ const TRAVoicesPage: React.FC = () => {
   const addMessage = useMutation(api.transcripts.mutations.addMessage);
   const userSettings = useQuery(api.users.queries.getSettings, {});
   const subscription = useQuery(api.subscriptions.queries.getCurrent, {});
-  const voiceClone = useQuery(api.voices.queries.getMyVoiceClone);
+  const voiceClone = useQuery(api.voices.queries.getMyVoiceClone, { userEmail: user?.email || undefined });
   const ensureUser = useMutation(api.debug.ensureUserByEmail);
 
   // Ensure user exists in app database
@@ -134,6 +142,18 @@ const TRAVoicesPage: React.FC = () => {
     setIsConnecting(false);
     setConnectionStatus('disconnected');
     setUsageWarning(null);
+    setPartialText('');
+    setSttState('idle');
+    setTranslateState('idle');
+    setTtsState('idle');
+    setDroppedFrames(0);
+    setAutoplayBlocked(false);
+
+    // Clear any pending LiveKit disconnect grace timer
+    if (lkDisconnectTimerRef.current) {
+      clearTimeout(lkDisconnectTimerRef.current);
+      lkDisconnectTimerRef.current = null;
+    }
 
     if (usageTimerRef.current) {
       clearInterval(usageTimerRef.current);
@@ -355,7 +375,7 @@ const TRAVoicesPage: React.FC = () => {
       const roomOptions: RoomOptions = {
         adaptiveStream: true,
         dynacast: true,
-        disconnectOnPageLeave: false,
+        disconnectOnPageLeave: true,
       };
       const room = new Room(roomOptions);
       lkRoomRef.current = room;
@@ -378,7 +398,19 @@ const TRAVoicesPage: React.FC = () => {
         document.body.appendChild(el);
         audioElementsRef.current.add(el as HTMLAudioElement);
         el.play().catch((e) => {
-          console.warn('Autoplay blocked, will retry on next interaction:', e.message);
+          console.warn('Autoplay blocked, will retry on interaction:', e.message);
+          setAutoplayBlocked(true);
+          // Add one-time listeners to retry playback on user interaction
+          const retryPlayback = () => {
+            audioElementsRef.current.forEach(audioEl => {
+              audioEl.play().catch(() => {});
+            });
+            setAutoplayBlocked(false);
+            document.removeEventListener('click', retryPlayback);
+            document.removeEventListener('touchstart', retryPlayback);
+          };
+          document.addEventListener('click', retryPlayback, { once: true });
+          document.addEventListener('touchstart', retryPlayback, { once: true });
         });
         syncParticipants();
       });
@@ -400,8 +432,16 @@ const TRAVoicesPage: React.FC = () => {
       room.on(RoomEvent.Disconnected, () => {
         console.warn('LiveKit room disconnected. isStoppingRef:', isStoppingRef.current);
         if (isStoppingRef.current) return;
-        stopAllRef.current();
-        setError('Session ended. Tap "Start Translation" to reconnect.');
+        // Grace period: wait 15s for reconnection before killing session
+        setConnectionStatus('reconnecting');
+        setError('Connection lost — reconnecting...');
+        lkDisconnectTimerRef.current = setTimeout(() => {
+          lkDisconnectTimerRef.current = null;
+          if (!isStoppingRef.current) {
+            stopAllRef.current();
+            setError('Session ended after connection timeout. Tap "Start Translation" to reconnect.');
+          }
+        }, 15000);
       });
       room.on(RoomEvent.Reconnecting, () => {
         console.log('LiveKit reconnecting...');
@@ -409,8 +449,21 @@ const TRAVoicesPage: React.FC = () => {
       });
       room.on(RoomEvent.Reconnected, () => {
         console.log('LiveKit reconnected');
+        // Cancel pending disconnect timer if we recovered
+        if (lkDisconnectTimerRef.current) {
+          clearTimeout(lkDisconnectTimerRef.current);
+          lkDisconnectTimerRef.current = null;
+        }
         setConnectionStatus('connected');
         setError(null);
+        syncParticipants();
+      });
+      room.on(RoomEvent.TrackMuted, () => {
+        console.log('Remote track muted');
+        syncParticipants();
+      });
+      room.on(RoomEvent.TrackUnmuted, () => {
+        console.log('Remote track unmuted');
         syncParticipants();
       });
 
@@ -432,6 +485,11 @@ const TRAVoicesPage: React.FC = () => {
         throw new Error('LiveKit room disconnected before track could be published');
       }
 
+      // Start silence generator BEFORE publishing to ensure track has audio flowing
+      schedulerRef.current?.startSilenceGenerator();
+      // Brief delay to ensure initial silence frames exist on the track
+      await new Promise(resolve => setTimeout(resolve, 100));
+
       // Publish translated audio track from scheduler's MediaStream
       const schedulerStream = schedulerRef.current?.mediaStream;
       if (!schedulerStream || schedulerStream.getAudioTracks().length === 0) {
@@ -441,7 +499,7 @@ const TRAVoicesPage: React.FC = () => {
       try {
         await room.localParticipant.publishTrack(translatedTrack, {
           name: 'translated-audio',
-          source: Track.Source.Microphone,
+          source: Track.Source.ScreenShareAudio,
         });
         console.log('Track published successfully');
       } catch (pubErr: any) {
@@ -450,16 +508,13 @@ const TRAVoicesPage: React.FC = () => {
         if (room.state === ConnectionState.Connected) {
           await room.localParticipant.publishTrack(translatedTrack, {
             name: 'translated-audio',
-            source: Track.Source.Microphone,
+            source: Track.Source.ScreenShareAudio,
           });
           console.log('Track published on retry');
         } else {
           throw new Error('LiveKit room disconnected, cannot publish track');
         }
       }
-
-      // Start silence generator to keep the track alive between speech
-      schedulerRef.current?.startSilenceGenerator();
 
       // --- Create and connect pipeline ---
       const pipeline = pipelineMode === 'standard'
@@ -468,8 +523,25 @@ const TRAVoicesPage: React.FC = () => {
 
       pipelineRef.current = pipeline;
 
+      // Wire audio scheduler drop callback
+      schedulerRef.current?.onDrop((count) => {
+        setDroppedFrames(count);
+      });
+
       // Wire pipeline callbacks
       pipeline.onTranscript((event: TranscriptEvent) => {
+        if (event.type === 'partial') {
+          setPartialText(event.text);
+          return;
+        }
+        // Clear partial text when we get a final transcript
+        if (event.type === 'input') {
+          setPartialText('');
+          setSttState('connected');
+        }
+        if (event.type === 'output') {
+          setTranslateState('connected');
+        }
         const msg: TranslationMessage = {
           id: Date.now().toString() + (event.type === 'output' ? 'a' : ''),
           sender: event.type === 'input' ? 'user' : 'agent',
@@ -499,15 +571,28 @@ const TRAVoicesPage: React.FC = () => {
       pipeline.onStatusChange((status: string) => {
         if (status === 'connected') {
           setConnectionStatus('connected');
+          setSttState('connected');
+          setTtsState('connected');
           setError(null);
         } else if (status === 'reconnecting') {
           setConnectionStatus('reconnecting');
+          setSttState('reconnecting');
         } else if (status === 'disconnected') {
           setConnectionStatus('disconnected');
+          setSttState('idle');
         }
       });
 
       pipeline.onError((err: PipelineError) => {
+        // Update health indicator based on error source
+        if (err.code.startsWith('deepgram') || err.code === 'audio_dropped') {
+          setSttState('error');
+        } else if (err.code.startsWith('openrouter') || err.code.startsWith('translation')) {
+          setTranslateState('error');
+        } else if (err.code.startsWith('cartesia') || err.code === 'tts_buffered') {
+          setTtsState('error');
+        }
+
         if (err.recoverable) {
           setError(err.message);
         } else {
@@ -515,6 +600,11 @@ const TRAVoicesPage: React.FC = () => {
           stopAllRef.current();
         }
       });
+
+      // Set health indicator to connecting state
+      setSttState('connecting');
+      setTranslateState('connecting');
+      setTtsState('connecting');
 
       // Connect pipeline
       await pipeline.connect({
@@ -670,6 +760,22 @@ const TRAVoicesPage: React.FC = () => {
                     t('translate.startTranslation')
                   )}
                 </button>
+                {isActive && (
+                  <PipelineHealthIndicator
+                    sttState={sttState}
+                    translateState={translateState}
+                    ttsState={ttsState}
+                    droppedFrames={droppedFrames}
+                  />
+                )}
+                {autoplayBlocked && (
+                  <div
+                    className="mt-3 p-3 rounded-xl text-center text-sm font-medium"
+                    style={{ background: 'rgba(224, 180, 76, 0.15)', color: '#e0b44c', border: '1px solid rgba(224, 180, 76, 0.3)' }}
+                  >
+                    Tap anywhere to enable audio playback
+                  </div>
+                )}
               </div>
 
               {/* Pipeline Toggle */}
@@ -1088,7 +1194,26 @@ const TRAVoicesPage: React.FC = () => {
                         </p>
                       </div>
                     ) : (
-                      transcript.map((msg) => (
+                      <>
+                      {partialText && (
+                        <div className="flex flex-col items-start">
+                          <div
+                            className="max-w-[85%] p-4 rounded-2xl"
+                            style={{
+                              background: 'var(--bg-elevated)',
+                              borderBottomLeftRadius: '4px',
+                              opacity: 0.7,
+                              border: '1px dashed var(--border-soft)',
+                            }}
+                          >
+                            <div className="flex items-center gap-2 mb-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                              <span className="font-medium italic">Listening...</span>
+                            </div>
+                            <p className="text-sm leading-relaxed italic" style={{ color: 'var(--text-secondary)' }}>{partialText}</p>
+                          </div>
+                        </div>
+                      )}
+                      {transcript.map((msg) => (
                         <div
                           key={msg.id}
                           className={`flex flex-col ${msg.sender === 'user' ? 'items-start' : 'items-end'}`}
@@ -1113,7 +1238,8 @@ const TRAVoicesPage: React.FC = () => {
                             <p className="text-sm leading-relaxed">{msg.text}</p>
                           </div>
                         </div>
-                      ))
+                      ))}
+                      </>
                     )}
                   </div>
                 </div>

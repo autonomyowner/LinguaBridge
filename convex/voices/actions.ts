@@ -197,6 +197,63 @@ export const getDefaultCartesiaVoiceId = action({
 });
 
 /**
+ * Delete a voice clone — removes from Cartesia API and then from our database.
+ * Non-throwing: if Cartesia delete fails, we still delete the local record.
+ */
+export const deleteVoiceCloneAction = action({
+  args: {
+    userEmail: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ success: boolean }> => {
+    const user = await resolveUser(ctx, args.userEmail);
+    if (!user) {
+      throw new Error("Authentication required");
+    }
+
+    // Get the voice clone record
+    const clone = await ctx.runQuery(api.voices.queries.getMyVoiceClone, {
+      userEmail: args.userEmail,
+    });
+    if (!clone) {
+      return { success: true }; // Nothing to delete
+    }
+
+    // Try to delete from Cartesia API (non-throwing)
+    const cartesiaApiKey = process.env.CARTESIA_API_KEY;
+    if (cartesiaApiKey && clone.cartesiaVoiceId) {
+      try {
+        const response = await fetch(
+          `https://api.cartesia.ai/voices/${clone.cartesiaVoiceId}`,
+          {
+            method: "DELETE",
+            headers: {
+              "Cartesia-Version": "2025-04-16",
+              Authorization: `Bearer ${cartesiaApiKey}`,
+            },
+          }
+        );
+        if (response.ok) {
+          console.log(`[deleteVoiceClone] Deleted from Cartesia: ${clone.cartesiaVoiceId}`);
+        } else {
+          console.warn(
+            `[deleteVoiceClone] Cartesia delete failed (${response.status}), proceeding with local delete`
+          );
+        }
+      } catch (e) {
+        console.warn("[deleteVoiceClone] Cartesia API error, proceeding with local delete:", e);
+      }
+    }
+
+    // Delete from our database
+    await ctx.runMutation(api.voices.mutations.deleteVoiceClone, {
+      userEmail: args.userEmail,
+    });
+
+    return { success: true };
+  },
+});
+
+/**
  * List all available Cartesia voices for voice picker UI.
  * Returns voices from the Cartesia API so users can choose male/female/different styles.
  */

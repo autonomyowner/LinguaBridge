@@ -91,6 +91,39 @@ export class WebSocketManager {
     return this._state === 'connected' && !!this.ws && this.ws.readyState === WebSocket.OPEN;
   }
 
+  /**
+   * Returns a Promise that resolves when the WebSocket reaches 'connected' state,
+   * or rejects on timeout / disconnect.
+   */
+  waitForConnected(timeoutMs: number = 10000): Promise<void> {
+    if (this._state === 'connected' && this.ws?.readyState === WebSocket.OPEN) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error(`WebSocket did not connect within ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      const originalOnStateChange = this.config.onStateChange;
+      const cleanup = () => {
+        clearTimeout(timer);
+        this.config.onStateChange = originalOnStateChange;
+      };
+
+      this.config.onStateChange = (state: WsState) => {
+        originalOnStateChange(state);
+        if (state === 'connected') {
+          cleanup();
+          resolve();
+        } else if (state === 'disconnected') {
+          cleanup();
+          reject(new Error('WebSocket disconnected before connecting'));
+        }
+      };
+    });
+  }
+
   // --- Internal ---
 
   private doConnect(): void {

@@ -14,7 +14,7 @@ export interface PipelineConfig {
 }
 
 export interface TranscriptEvent {
-  type: 'input' | 'output';
+  type: 'input' | 'output' | 'partial';
   text: string;
   language: string;
 }

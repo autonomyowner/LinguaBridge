@@ -9,6 +9,7 @@ import { SUPPORTED_LANGUAGES } from "../types";
 type Step = "welcome" | "recording" | "processing" | "preview" | "done";
 
 const RECORD_DURATION = 10; // seconds
+const MIN_RECORD_DURATION = 3; // minimum seconds before allowing stop
 
 const SAMPLE_PROMPTS = [
   "The quick brown fox jumps over the lazy dog. I enjoy having conversations in many different languages, and technology makes it possible to connect with people around the world.",
@@ -20,7 +21,7 @@ const VoiceSetupPage: React.FC = () => {
   const { user, isAuthenticated } = useAuth();
   const { t } = useLanguage();
   const cloneVoice = useAction(api.voices.actions.cloneVoice);
-  const voiceClone = useQuery(api.voices.queries.getMyVoiceClone);
+  const voiceClone = useQuery(api.voices.queries.getMyVoiceClone, { userEmail: user?.email || undefined });
 
   // Ensure user exists in app database (cross-origin auth workaround)
   const ensureUser = useMutation(api.debug.ensureUserByEmail);
@@ -40,6 +41,7 @@ const VoiceSetupPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [language, setLanguage] = useState("en-US");
   const [audioLevels, setAudioLevels] = useState<number[]>(new Array(12).fill(0.1));
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -118,7 +120,7 @@ const VoiceSetupPage: React.FC = () => {
         }
       };
 
-      mediaRecorder.onstop = async () => {
+      mediaRecorder.onstop = () => {
         // Stop stream
         stream.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
@@ -131,8 +133,11 @@ const VoiceSetupPage: React.FC = () => {
           cancelAnimationFrame(animationFrameRef.current);
         }
 
-        // Process the recording
-        await processRecording();
+        // Create preview URL and go to preview step
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        const url = URL.createObjectURL(audioBlob);
+        setPreviewUrl(url);
+        setStep("preview");
       };
 
       mediaRecorder.start(500); // Collect data every 500ms
@@ -168,10 +173,20 @@ const VoiceSetupPage: React.FC = () => {
   };
 
   const processRecording = async () => {
+    // Clean up preview URL
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+    }
+
     setStep("processing");
     setError(null);
 
     try {
+      if (recordingTime < MIN_RECORD_DURATION) {
+        throw new Error(`Recording too short. Please record at least ${MIN_RECORD_DURATION} seconds.`);
+      }
+
       const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
 
       // Convert to base64
@@ -381,10 +396,54 @@ const VoiceSetupPage: React.FC = () => {
 
               <button
                 onClick={stopRecording}
+                disabled={recordingTime < MIN_RECORD_DURATION}
                 className="w-full matcha-btn matcha-btn-danger py-4 text-base font-semibold"
+                style={{ opacity: recordingTime < MIN_RECORD_DURATION ? 0.5 : 1 }}
               >
-                Stop Recording Early
+                {recordingTime < MIN_RECORD_DURATION
+                  ? `Wait ${MIN_RECORD_DURATION - recordingTime}s...`
+                  : 'Stop Recording Early'}
               </button>
+            </div>
+          )}
+
+          {/* Preview Step */}
+          {step === "preview" && previewUrl && (
+            <div className="matcha-card p-8 animate-fade-in">
+              <div className="text-center mb-6">
+                <h2 className="text-xl font-serif mb-2" style={{ color: "var(--text-primary)" }}>
+                  Review Your Recording
+                </h2>
+                <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                  Listen back and confirm it sounds clear
+                </p>
+              </div>
+
+              <div
+                className="p-4 rounded-xl mb-6"
+                style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-soft)" }}
+              >
+                <audio controls src={previewUrl} className="w-full" />
+              </div>
+
+              <div className="space-y-3">
+                <button
+                  onClick={processRecording}
+                  className="w-full matcha-btn matcha-btn-primary py-4 text-base font-semibold"
+                >
+                  Use This Recording
+                </button>
+                <button
+                  onClick={() => {
+                    if (previewUrl) URL.revokeObjectURL(previewUrl);
+                    setPreviewUrl(null);
+                    setStep("welcome");
+                  }}
+                  className="w-full matcha-btn matcha-btn-secondary py-3 text-sm"
+                >
+                  Re-record
+                </button>
+              </div>
             </div>
           )}
 
