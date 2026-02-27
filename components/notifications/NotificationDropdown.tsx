@@ -23,8 +23,9 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ onClose }) 
 
   return (
     <div
-      className="absolute right-0 top-full mt-2 w-80 max-h-96 overflow-y-auto rounded-xl shadow-lg z-50"
+      className="absolute top-full mt-2 w-80 max-h-96 overflow-y-auto rounded-xl shadow-lg z-50"
       style={{
+        insetInlineEnd: 0,
         background: "var(--bg-card)",
         border: "1px solid var(--border-soft)",
       }}
