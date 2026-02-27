@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 TRAVoices is a real-time AI voice translation SaaS. Users join translation rooms, speak in their language, and have their voice translated and broadcast to other participants in real-time.
 
-**Tech Stack:** React 19 + TypeScript + Vite (frontend), Convex (backend/database), Better-Auth (authentication), LiveKit (WebRTC audio), Deepgram Nova-2 (STT), OpenRouter/GPT-4o-mini (translation), Cartesia Sonic-2 (TTS)
+**Tech Stack:** React 19 + TypeScript + Vite (frontend), Convex (backend/database), Better-Auth (authentication), LiveKit (WebRTC audio), Deepgram Nova-2/3 (STT), OpenRouter/GPT-4o-mini (translation), Cartesia Sonic-2/3 (TTS)
 
 **Subscription Tiers:** Free (60 min/month), Pro ($19/mo, 600 min), Enterprise ($99/mo, unlimited)
 
@@ -124,11 +124,31 @@ Mic (16kHz PCM) → Deepgram Nova-2 (STT) → OpenRouter/GPT-4o-mini (Translatio
 
 **Voice cloning:** Users can clone their voice via `VoiceSetupPage.tsx` → Cartesia clone API. Cloned voice ID stored in `voiceClones` table. If no clone, falls back to Cartesia's default public voices.
 
-**Reconnection:** Deepgram WebSocket has exponential backoff (1s→30s, max 5 attempts). Cartesia WebSocket auto-reconnects after 2s. LiveKit has built-in reconnection (don't call stopAll on first disconnect).
+**Reconnection:** Deepgram WebSocket has exponential backoff (1s→30s, max 10 attempts). Cartesia WebSocket auto-reconnects after 2s (max 10 attempts). LiveKit has 15s grace period before killing session.
 
-**Mobile audio:** LiveKit's `room.startAudio()` must be called after connect to unlock audio playback on mobile browsers. `AudioPlaybackStatusChanged` event handler auto-retries.
+**Mobile audio:** LiveKit's `room.startAudio()` must be called after connect to unlock audio playback on mobile browsers. `AudioPlaybackStatusChanged` event handler auto-retries. "Tap anywhere to enable audio" banner shown when autoplay blocked.
 
 Languages: `SUPPORTED_LANGUAGES` array in `types.ts` (12 languages)
+
+**Pipeline V2 Key Files:**
+- `lib/pipelines/ws-manager.ts` — WebSocket lifecycle with `waitForConnected()`, keepalive, health check, reconnect backoff
+- `lib/pipelines/standard-pipeline-v2.ts` — Orchestrates Deepgram→OpenRouter→Cartesia with error handling
+- `lib/pipelines/queues.ts` — TranslationQueue (2 concurrent, 20s stale threshold) + TTSQueue (5s dedup)
+- `lib/pipelines/audio-scheduler.ts` — PCM resampling (24kHz→48kHz), queue depth 50, silence generator, AudioContext monitor
+- `lib/pipelines/types.ts` — Pipeline interfaces, TranscriptEvent (input/output/partial)
+- `components/PipelineHealthIndicator.tsx` — Real-time STT/Translate/TTS status dots
+
+**Language-Specific Model Selection:**
+- Arabic, Bengali, Tamil, Telugu, Kannada, Marathi, Tagalog (`UPGRADE_LANGUAGES` set in standard-pipeline-v2.ts) require:
+  - **Deepgram Nova-3** (Nova-2 doesn't support these languages)
+  - **Cartesia Sonic-3** (Sonic-2 doesn't support these languages)
+- All other languages use Nova-2 + Sonic-2 (faster, cheaper)
+
+**Audio Queue Depth:** Cartesia sends ~20-30 small PCM chunks per sentence. `MAX_QUEUE_DEPTH` must be ≥50 or chunks get silently dropped.
+
+**TTS Deduplication:** TTSQueue tracks recently sent text for 5s to prevent duplicate speech on WebSocket reconnect flushes.
+
+**Transcript Saving:** `addMessage` mutation is best-effort — uses `getCurrentUserOrNull()`, returns null on auth failure instead of throwing. Won't crash the pipeline.
 
 ### i18n (providers/LanguageContext.tsx)
 - Languages: English (`en`), Arabic (`ar`)
