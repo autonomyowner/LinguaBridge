@@ -564,7 +564,7 @@ const HomePage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Right Voice Orb - Spanish */}
+                {/* Right Voice Orb - Arabic */}
                 <div className="relative flex flex-col items-center gap-3 z-10">
                   <div className="relative">
                     <div
@@ -574,7 +574,7 @@ const HomePage: React.FC = () => {
                         boxShadow: '0 0 60px rgba(198, 123, 94, 0.5), inset 0 2px 10px rgba(255, 255, 255, 0.2)',
                       }}
                     >
-                      <span className="text-3xl md:text-4xl font-bold" style={{ color: 'white' }}>ES</span>
+                      <span className="text-3xl md:text-4xl font-bold" style={{ color: 'white' }}>AR</span>
                       <div
                         className="absolute inset-3 rounded-full pulse-glow"
                         style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.3) 0%, transparent 70%)', animationDelay: '0.3s' }}
@@ -599,7 +599,7 @@ const HomePage: React.FC = () => {
                     }}
                   >
                     <span className="text-xs md:text-sm font-bold tracking-wider" style={{ color: 'var(--terra-300)' }}>
-                      SPANISH
+                      ARABIC
                     </span>
                   </div>
                   <div className="flex items-end gap-1 h-16 md:h-20">
