@@ -23,6 +23,13 @@ const CARTESIA_MODEL_ID = 'sonic-2';
 const CARTESIA_SAMPLE_RATE = 24000;
 const INPUT_SAMPLE_RATE = 16000;
 
+/**
+ * Languages that require Nova-3 (not supported by Nova-2).
+ * Nova-2 doesn't support Arabic — Deepgram returns an error.
+ * Nova-3 adds Arabic and several other languages.
+ */
+const NOVA3_LANGUAGES = new Set(['ar', 'ar-SA', 'bn', 'ta', 'te', 'kn', 'mr', 'tl']);
+
 export class StandardPipelineV2 implements TranslationPipeline {
   readonly mode = 'standard' as const;
 
@@ -154,9 +161,14 @@ export class StandardPipelineV2 implements TranslationPipeline {
     const { sourceLanguage, apiKeys } = this.config;
     const dgLang = DEEPGRAM_LANGUAGE_MAP[sourceLanguage.code] || sourceLanguage.code.split('-')[0];
 
+    // Use nova-3 for languages not supported by nova-2 (e.g. Arabic)
+    const needsNova3 = NOVA3_LANGUAGES.has(sourceLanguage.code) || NOVA3_LANGUAGES.has(dgLang);
+    const dgModel = needsNova3 ? 'nova-3' : 'nova-2';
+    console.log(`[PipelineV2] Deepgram model: ${dgModel} for language: ${dgLang}`);
+
     this.deepgramWs = new WebSocketManager({
       createUrl: () =>
-        `${DEEPGRAM_WS_BASE_URL}?model=nova-2&language=${dgLang}&encoding=linear16&sample_rate=${INPUT_SAMPLE_RATE}&channels=1&interim_results=true&punctuate=true&endpointing=300&utterance_end_ms=1000`,
+        `${DEEPGRAM_WS_BASE_URL}?model=${dgModel}&language=${dgLang}&encoding=linear16&sample_rate=${INPUT_SAMPLE_RATE}&channels=1&interim_results=true&punctuate=true&endpointing=300&utterance_end_ms=1000`,
       protocols: ['token', apiKeys.deepgram!],
       keepalive: {
         intervalMs: 8000,
