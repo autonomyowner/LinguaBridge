@@ -19,16 +19,14 @@ const DEEPGRAM_WS_BASE_URL = 'wss://api.deepgram.com/v1/listen';
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const OPENROUTER_MODEL = 'openai/gpt-4o-mini';
 const CARTESIA_WS_URL = 'wss://api.cartesia.ai/tts/websocket';
-const CARTESIA_MODEL_ID = 'sonic-2';
 const CARTESIA_SAMPLE_RATE = 24000;
 const INPUT_SAMPLE_RATE = 16000;
 
 /**
- * Languages that require Nova-3 (not supported by Nova-2).
- * Nova-2 doesn't support Arabic — Deepgram returns an error.
- * Nova-3 adds Arabic and several other languages.
+ * Languages that require newer models (not supported by Nova-2 / Sonic-2).
+ * Arabic, Bengali, Tamil, etc. need Nova-3 for STT and Sonic-3 for TTS.
  */
-const NOVA3_LANGUAGES = new Set(['ar', 'ar-SA', 'bn', 'ta', 'te', 'kn', 'mr', 'tl']);
+const UPGRADE_LANGUAGES = new Set(['ar', 'ar-SA', 'bn', 'ta', 'te', 'kn', 'mr', 'tl']);
 
 export class StandardPipelineV2 implements TranslationPipeline {
   readonly mode = 'standard' as const;
@@ -162,7 +160,7 @@ export class StandardPipelineV2 implements TranslationPipeline {
     const dgLang = DEEPGRAM_LANGUAGE_MAP[sourceLanguage.code] || sourceLanguage.code.split('-')[0];
 
     // Use nova-3 for languages not supported by nova-2 (e.g. Arabic)
-    const needsNova3 = NOVA3_LANGUAGES.has(sourceLanguage.code) || NOVA3_LANGUAGES.has(dgLang);
+    const needsNova3 = UPGRADE_LANGUAGES.has(sourceLanguage.code) || UPGRADE_LANGUAGES.has(dgLang);
     const dgModel = needsNova3 ? 'nova-3' : 'nova-2';
     console.log(`[PipelineV2] Deepgram model: ${dgModel} for language: ${dgLang}`);
 
@@ -388,8 +386,11 @@ export class StandardPipelineV2 implements TranslationPipeline {
     if (!this.cartesiaWs?.isConnected || !this.config?.voiceId) return false;
 
     const cartesiaLang = this.config.targetLanguage.code.split('-')[0];
+    // Use sonic-3 for languages not supported by sonic-2 (e.g. Arabic)
+    const cartesiaModel = UPGRADE_LANGUAGES.has(this.config.targetLanguage.code) || UPGRADE_LANGUAGES.has(cartesiaLang)
+      ? 'sonic-3' : 'sonic-2';
     const payload = JSON.stringify({
-      model_id: CARTESIA_MODEL_ID,
+      model_id: cartesiaModel,
       transcript: text,
       voice: { mode: 'id', id: this.config.voiceId },
       language: cartesiaLang,
