@@ -14,7 +14,7 @@ const OUTPUT_SAMPLE_RATE = 48000;
 const CARTESIA_SAMPLE_RATE = 24000;
 const SILENCE_INTERVAL_MS = 500;     // generate silence every 500ms
 const SILENCE_DURATION_MS = 50;      // 50ms of silence each time
-const MAX_QUEUE_DEPTH = 10;
+const MAX_QUEUE_DEPTH = 50; // Cartesia sends ~20-30 small PCM chunks per sentence
 
 export class AudioPlaybackScheduler {
   private audioContext: AudioContext | null = null;

@@ -114,6 +114,7 @@ export class TTSQueue {
   private queue: TTSItem[] = [];
   private nextContextId = 1;
   private stopped = false;
+  private recentlySent = new Set<string>(); // dedup: track recently sent text
 
   constructor(
     private sendFn: SendTTSFn,
@@ -123,6 +124,14 @@ export class TTSQueue {
   /** Enqueue text for TTS. Sends immediately if possible, buffers if not. */
   enqueue(text: string): number {
     if (this.stopped) return -1;
+
+    // Deduplicate: skip if we just sent the exact same text in the last 5s
+    if (this.recentlySent.has(text)) {
+      console.log('[TTSQueue] Skipping duplicate:', text.substring(0, 30));
+      return -1;
+    }
+    this.recentlySent.add(text);
+    setTimeout(() => this.recentlySent.delete(text), 5000);
 
     const contextId = this.nextContextId++;
     const sent = this.sendFn(text, contextId);
@@ -170,6 +179,7 @@ export class TTSQueue {
 
   clear(): void {
     this.queue = [];
+    this.recentlySent.clear();
   }
 
   stop(): void {
@@ -180,6 +190,7 @@ export class TTSQueue {
   start(): void {
     this.stopped = false;
     this.nextContextId = 1;
+    this.recentlySent.clear();
   }
 
   get bufferedCount(): number {
