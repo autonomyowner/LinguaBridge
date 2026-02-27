@@ -92,10 +92,21 @@ export class StandardPipelineV2 implements TranslationPipeline {
     this.connectCartesia();
     this.connectDeepgram();
 
-    // Await both WebSockets to actually open before returning
+    // Best-effort wait for WebSockets — warn but don't fail if they timeout
+    // (they'll keep reconnecting via their own backoff logic)
+    const safeWait = (ws: import('./ws-manager').WebSocketManager, label: string) =>
+      ws.waitForConnected(10000).catch((err) => {
+        console.warn(`[PipelineV2] ${label} initial connect slow:`, err.message);
+        this.errorCb?.({
+          code: `${label.toLowerCase()}_slow_connect`,
+          message: `${label} connecting slowly — audio may start with a short delay`,
+          recoverable: true,
+        });
+      });
+
     await Promise.all([
-      this.cartesiaWs!.waitForConnected(10000),
-      this.deepgramWs!.waitForConnected(10000),
+      safeWait(this.cartesiaWs!, 'Cartesia'),
+      safeWait(this.deepgramWs!, 'Deepgram'),
     ]);
   }
 
