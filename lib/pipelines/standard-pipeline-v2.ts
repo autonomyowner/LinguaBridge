@@ -413,10 +413,11 @@ export class StandardPipelineV2 implements TranslationPipeline {
       if (data.type === 'chunk' && data.data) {
         this.audioOutputCb?.({ pcmBase64: data.data, sampleRate: CARTESIA_SAMPLE_RATE });
       } else if (data.type === 'error') {
-        console.error('[PipelineV2] Cartesia TTS error:', data.message || data);
+        const errMsg = data.message || data.error || JSON.stringify(data);
+        console.error('[PipelineV2] Cartesia TTS error:', errMsg);
         this.errorCb?.({
           code: 'cartesia_tts_error',
-          message: `Voice synthesis error: ${data.message || 'Unknown'}`,
+          message: `Voice synthesis error: ${errMsg}`,
           recoverable: true,
         });
       }
